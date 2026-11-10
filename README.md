@@ -118,6 +118,7 @@ Henüz denenmeyenler:
 ## Sonraki adımlar
 
 1. Lab: izole VM'ler, Zeek, `conn.log` → özellik çıkarma → `POST /api/events/`.
+   Kademe kademe ilerliyor, bkz. [`sensor/README.md`](sensor/README.md) (Kademe 1: `conn.log` okuyucu hazır).
 2. XGBoost baseline, ardından Autoencoder; karar tablosu ve eşikler (PR eğrisi).
 3. Claude agent: `core/agent.py` içindeki `RuleAgent` yerine, araçları `core.actions` üzerinden geçen agent.
 4. Gerçek güvenlik duvarı arka ucu (lab ağ geçidi) ve kontrollü saldırı senaryoları ile ölçüm.
