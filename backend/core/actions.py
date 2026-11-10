@@ -20,6 +20,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from . import audit, realtime
@@ -62,6 +63,24 @@ def _parse_ttl(params):
 # --- Önerme ---------------------------------------------------------------
 
 
+def _active_action(kind, target):
+    """Aynı tür + hedef için hâlâ geçerli eylem: bekleyen öneri veya süresi dolmamış önlem."""
+    now = timezone.now()
+    live = Action.objects.filter(kind=kind, target=target)
+    pending = live.filter(status=Action.Status.PENDING_APPROVAL).filter(
+        Q(approval_deadline__isnull=True) | Q(approval_deadline__gte=now)
+    )
+    executed = live.filter(status=Action.Status.EXECUTED).filter(
+        Q(effect_expires_at__isnull=True) | Q(effect_expires_at__gt=now)
+    )
+    # Kuru çalıştırmada gerçek bir etki süresi yoktur; "olsaydı" ne kadar sürerdi, TTL'e göre say.
+    seconds = (settings.AUTO_BLOCK_TTL_SECONDS if kind == Action.Kind.BLOCK_IP
+               else settings.APPROVAL_TTL_SECONDS)
+    dry = live.filter(status=Action.Status.DRY_RUN,
+                      created_at__gte=now - timedelta(seconds=seconds))
+    return pending.first() or executed.first() or dry.first()
+
+
 @transaction.atomic
 def propose_action(event, kind, target, params=None, proposed_by="agent"):
     params = dict(params or {})
@@ -93,6 +112,15 @@ def propose_action(event, kind, target, params=None, proposed_by="agent"):
         return action
 
     ttl = _parse_ttl(params) if kind == Action.Kind.BLOCK_IP else None
+
+    # Sensör aynı saldırgan için her pencerede yeni olay üretir. Hedefte zaten geçerli bir
+    # önlem (veya onay bekleyen öneri) varsa ikincisini açmayız.
+    if kind in PROTECTABLE_KINDS:
+        existing = _active_action(kind, target)
+        if existing is not None:
+            audit.record(proposed_by, f"propose_{kind}", target, "deduplicated",
+                         event_id=event_id, action_id=existing.pk)
+            return existing
 
     auto_eligible = (
         kind == Action.Kind.BLOCK_IP and ttl <= settings.MAX_AUTO_BLOCK_TTL_SECONDS

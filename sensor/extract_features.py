@@ -19,7 +19,8 @@ from zeek_reader import read_log
 
 def write_csv(rows, path):
     with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["src_ip", "window_start", *FEATURES])
+        # Meta alanlar (top_port, top_dst_host) modele girmez; CSV'ye yalnızca kimlik + özellikler yazılır.
+        writer = csv.DictWriter(f, fieldnames=["src_ip", "window_start", *FEATURES], extrasaction="ignore")
         writer.writeheader()
         for row in rows:
             writer.writerow({k: (round(v, 4) if isinstance(v, float) else v) for k, v in row.items()})

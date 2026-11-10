@@ -97,7 +97,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 49 test, Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 60 test, Postgres gerekmez
 ```
 
 ## Doğrulananlar ve doğrulanmayanlar
@@ -118,7 +118,7 @@ Henüz denenmeyenler:
 ## Sonraki adımlar
 
 1. Lab: izole VM'ler, Zeek, `conn.log` → özellik çıkarma → `POST /api/events/`.
-   Kademe kademe ilerliyor, bkz. [`sensor/README.md`](sensor/README.md) (Kademe 1: `conn.log` okuyucu, Kademe 2: pencere başına özellikler hazır).
+   Kademe kademe ilerliyor, bkz. [`sensor/README.md`](sensor/README.md) (Kademe 1: `conn.log` okuyucu, Kademe 2: pencere başına özellikler, Kademe 3: kural tabanlı skor ve backend'e gönderim hazır).
 2. XGBoost baseline, ardından Autoencoder; karar tablosu ve eşikler (PR eğrisi).
 3. Claude agent: `core/agent.py` içindeki `RuleAgent` yerine, araçları `core.actions` üzerinden geçen agent.
 4. Gerçek güvenlik duvarı arka ucu (lab ağ geçidi) ve kontrollü saldırı senaryoları ile ölçüm.

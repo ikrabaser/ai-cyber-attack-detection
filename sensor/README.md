@@ -6,8 +6,8 @@ ilerliyoruz; her kademede çalışan ve anlaşılır bir şey var.
 | Kademe | Konu | Durum |
 |---|---|---|
 | 1 | Zeek `conn.log` okumak | tamam |
-| 2 | Özellik çıkarma (zaman penceresi başına sayılar) | **tamam** |
-| 3 | Kural tabanlı skor → backend → panel | |
+| 2 | Özellik çıkarma (zaman penceresi başına sayılar) | tamam |
+| 3 | Kural tabanlı skor → backend → panel | **tamam** |
 | 4 | Lab + gerçek saldırılar, etiketli veri | |
 | 5 | XGBoost | |
 | 6 | Autoencoder | |
@@ -103,11 +103,52 @@ Dikkat edilecek iki nokta:
 Sabit pencerelerin bir zayıflığı: sınırda başlayan bir saldırı iki pencereye bölünür. Kayan pencere
 bunu çözer; şimdilik basit tutuyoruz.
 
+## Kademe 3: kural tabanlı skor → backend → panel
+
+Modeller gelmeden önce hattı uçtan uca kuruyoruz. Karar verici şimdilik elle yazılmış, okunabilir
+**iki kural** (`rules.py`); modeller geldiğinde aynı hatta takılacak ve kurallar onlar için kıyas noktası olacak.
+
+| Kural | Ne zaman tetiklenir | Temel skor |
+|---|---|---|
+| `port_scan` | pencerede ≥ 10 farklı port | 0,55 + 0,25 × port bolluğu + 0,20 × başarısız oran |
+| `brute_force` | ≥ 8 bağlantı, ≥ %90'ı aynı giriş servisine (SSH, RDP, FTP, Telnet, VNC) | 0,50 + 0,20 × bağlantı bolluğu |
+
+**Israr (persistence) bonusu:** Tek pencere zayıf kanıt olabilir (brute force'un ilk penceresi 0,53).
+Aynı kaynakta aynı kural **art arda** pencerelerde tetiklenirse her ardışık pencere +0,10 ekler (en fazla +0,40);
+araya sessiz bir pencere girerse zincir kopar. Böylece saldırı sürdükçe risk tırmanır.
+
+Kurallar bilerek `mean_duration`'a bakmaz (Kademe 2'deki 9,5 sn'lik aykırı değer yüzünden).
+
+```bash
+python detect.py sample/conn.log                         # tespitleri göster, hiçbir şey göndermez
+export SENSOR_API_TOKEN=...                              # backend .env'deki ile aynı
+python detect.py sample/conn.log --send                  # backend'e gönder
+python detect.py sample/conn.log --send --delay 1        # 1 sn arayla, panelde canlı izlemek için
+```
+
+Örnek çıktıda 25 pencereden **7 tespit** çıkar, hepsi saldırgan `192.168.56.200`'den:
+
+| Pencere | Kural | Risk | Düzey |
+|---|---|---|---|
+| 12:01:00 | port_scan | 0,99 | high |
+| 12:01:30 → 12:02:20 | brute_force | 0,53 → 0,65 → 0,72 → 0,83 → 0,93 → 0,93 | low → … → high |
+
+Normal istemci (`192.168.56.50`) hiç işaretlenmez; 12:00:30'daki uzun meşru SSH oturumu dahil.
+
+**Backend tarafı:** Sensör aynı saldırgan için her pencerede yeni olay üretir. Bu yüzden
+`propose_action` artık `block_ip` / `isolate_host` için hedefte **geçerli bir eylem** (bekleyen öneri,
+süresi dolmamış önlem, TTL penceresindeki kuru çalıştırma) varsa yenisini açmaz, mevcut olanı döndürür ve
+denetim kaydına `deduplicated` yazar. Örnek senaryoda 7 olay → panelde **tek** onay bekleyen engel.
+Bilinen sınır: iki istek tam aynı anda gelirse veritabanı kısıtı olmadığı için çift kayıt mümkün.
+
 ## Dosyalar
 
 - `zeek_reader.py`: Zeek TSV (varsayılan) ve JSON biçimini okuyan, bağımlılıksız okuyucu.
 - `read_conn_log.py`: dosyayı özetleyen komut (Kademe 1).
 - `features.py`: pencere başına 7 özelliği hesaplayan fonksiyonlar (Kademe 2).
 - `extract_features.py`: özellik tablosunu gösteren / CSV'ye yazan komut (Kademe 2).
+- `rules.py`: iki kural + ısrar bonusu (Kademe 3).
+- `client.py`: tespiti backend'in JSON biçimine çevirir ve `POST /api/events/` ile yollar (Kademe 3).
+- `detect.py`: conn.log → özellik → kural → (isteğe bağlı) backend komutu (Kademe 3).
 - `sample/conn.log`: sentetik örnek.
-- `test_zeek_reader.py`, `test_features.py`: testler.
+- `test_zeek_reader.py`, `test_features.py`, `test_rules.py`, `test_client.py`: testler (49).

@@ -63,11 +63,20 @@ def compute_features(conns):
     }
 
 
+def target_summary(conns):
+    """Model girdisi OLMAYAN, açıklama ve kurallar için meta bilgi: en çok vurulan port ve makine."""
+    return {
+        "top_port": Counter(c["id.resp_p"] for c in conns).most_common(1)[0][0],
+        "top_dst_host": Counter(c["id.resp_h"] for c in conns).most_common(1)[0][0],
+    }
+
+
 def extract(records, window=WINDOW_SECONDS):
     """Kayıtları (kaynak IP, pencere) ile gruplayıp her grup için bir satır döndürür.
 
     Dönen satırlar zamana, sonra kaynağa göre sıralıdır:
-        {"src_ip": ..., "window_start": ..., "n_conns": ..., ...}
+        {"src_ip", "window_start", <FEATURES...>, "top_port", "top_dst_host"}
+    İlk iki alan kimlik, FEATURES sayısal özellikler, son ikisi meta bilgidir.
     """
     groups = defaultdict(list)
     for r in records:
@@ -75,5 +84,10 @@ def extract(records, window=WINDOW_SECONDS):
 
     rows = []
     for (src_ip, start), conns in sorted(groups.items(), key=lambda kv: (kv[0][1], kv[0][0])):
-        rows.append({"src_ip": src_ip, "window_start": start, **compute_features(conns)})
+        rows.append({
+            "src_ip": src_ip,
+            "window_start": start,
+            **compute_features(conns),
+            **target_summary(conns),
+        })
     return rows

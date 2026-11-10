@@ -41,6 +41,85 @@ class ProtectionTests(TestCase):
         self.assertFalse(is_protected_target("web-01"))
 
 
+class ActionDedupTests(TestCase):
+    """Sensör aynı saldırgan için her pencerede olay üretir; eylem yığılmamalı."""
+
+    IP = "203.0.113.7"
+
+    def setUp(self):
+        self.staff = User.objects.create_user("ops", password="x", is_staff=True)
+
+    def propose(self, kind="block_ip", target=None, **kw):
+        return actions.propose_action(make_event(), kind, target or self.IP, **kw)
+
+    def count(self, **filters):
+        return Action.objects.filter(**filters).count()
+
+    def test_repeated_proposal_returns_the_same_pending_action(self):
+        first = self.propose()
+        second = self.propose()
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(self.count(), 1)
+        self.assertTrue(AuditLog.objects.filter(outcome="deduplicated", target=self.IP).exists())
+
+    def test_isolate_host_is_deduplicated_too(self):
+        self.assertEqual(self.propose("isolate_host", "web-01").pk, self.propose("isolate_host", "web-01").pk)
+
+    def test_different_target_or_kind_is_not_a_duplicate(self):
+        self.propose()
+        self.propose(target="203.0.113.8")
+        self.propose("isolate_host", self.IP)
+        self.assertEqual(self.count(), 3)
+
+    @override_settings(AUTO_REMEDIATION_MODE="enforce")
+    def test_active_block_is_not_repeated(self):
+        first = self.propose(params={"ttl_seconds": 120})
+        self.assertEqual(first.status, Action.Status.EXECUTED)
+        self.assertEqual(self.propose(params={"ttl_seconds": 120}).pk, first.pk)
+        self.assertEqual(self.count(), 1)
+
+    @override_settings(AUTO_REMEDIATION_MODE="enforce")
+    def test_new_proposal_allowed_after_block_ttl_ran_out(self):
+        first = self.propose(params={"ttl_seconds": 120})
+        Action.objects.filter(pk=first.pk).update(effect_expires_at=timezone.now() - timedelta(seconds=1))
+        self.assertNotEqual(self.propose(params={"ttl_seconds": 120}).pk, first.pk)
+
+    @override_settings(AUTO_REMEDIATION_MODE="enforce")
+    def test_new_proposal_allowed_after_rollback(self):
+        first = self.propose(params={"ttl_seconds": 120})
+        actions.rollback_by_user(first.pk, self.staff)
+        self.assertNotEqual(self.propose(params={"ttl_seconds": 120}).pk, first.pk)
+
+    def test_new_proposal_allowed_after_rejection(self):
+        first = self.propose()
+        actions.reject_action(first.pk, self.staff)
+        self.assertNotEqual(self.propose().pk, first.pk)
+
+    def test_new_proposal_allowed_after_approval_deadline_passed(self):
+        first = self.propose()
+        Action.objects.filter(pk=first.pk).update(approval_deadline=timezone.now() - timedelta(seconds=1))
+        self.assertNotEqual(self.propose().pk, first.pk)
+
+    @override_settings(AUTO_REMEDIATION_MODE="dry_run", AUTO_BLOCK_TTL_SECONDS=600)
+    def test_dry_run_counts_only_within_ttl_window(self):
+        first = self.propose()
+        self.assertEqual(first.status, Action.Status.DRY_RUN)
+        self.assertEqual(self.propose().pk, first.pk)
+        Action.objects.filter(pk=first.pk).update(created_at=timezone.now() - timedelta(seconds=601))
+        self.assertNotEqual(self.propose().pk, first.pk)
+
+    def test_config_fix_is_not_deduplicated(self):
+        params = {"fix_id": "ssh_disable_password_auth"}
+        self.propose("config_fix", "web-01", params=params)
+        self.propose("config_fix", "web-01", params=params)
+        self.assertEqual(self.count(kind="config_fix"), 2)
+
+    def test_protected_target_is_still_refused_each_time(self):
+        for _ in range(2):
+            self.assertEqual(self.propose(target="192.168.56.10").status, Action.Status.REFUSED)
+        self.assertEqual(self.count(status=Action.Status.REFUSED), 2)
+
+
 class ActionPolicyTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user("ops", password="x", is_staff=True)
