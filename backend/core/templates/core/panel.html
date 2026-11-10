@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Saldırı Tespit Paneli</title>
+<link rel="icon" href="data:,">
+<style nonce="{{ csp_nonce }}">
+:root {
+  --bg: #0e1116; --panel: #161b22; --panel-2: #1c232d; --line: #2a323d;
+  --text: #e6edf3; --muted: #8b97a6;
+  --ok: #3fb950; --warn: #d29922; --bad: #f85149; --info: #58a6ff;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f6f9; --panel: #ffffff; --panel-2: #f0f3f7; --line: #d6dde6;
+    --text: #1b2430; --muted: #5a6879;
+    --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --info: #0969da;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 16px 48px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+header.top {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
+  padding: 16px 0; border-bottom: 1px solid var(--line); margin-bottom: 16px;
+}
+header.top h1 { font-size: 18px; margin: 0; flex: 1 1 auto; }
+header.top .who { color: var(--muted); font-size: 13px; }
+header.top a { color: var(--info); text-decoration: none; }
+header.top a:hover { text-decoration: underline; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--panel);
+  font-size: 12px; white-space: nowrap;
+}
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.pill.ok .dot { background: var(--ok); }
+.pill.warn .dot { background: var(--warn); }
+.pill.bad .dot { background: var(--bad); }
+
+.banner {
+  border: 1px solid var(--bad); border-radius: var(--radius); padding: 10px 14px;
+  margin-bottom: 16px; background: color-mix(in srgb, var(--bad) 12%, var(--panel));
+}
+.banner[hidden] { display: none; }
+.banner a { color: var(--info); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.kpi .n { font-size: 26px; font-weight: 650; line-height: 1.1; }
+.kpi .l { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.kpi.attn .n { color: var(--warn); }
+
+section.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 16px; }
+section.card > h2 {
+  margin: 0; padding: 12px 14px; font-size: 14px; border-bottom: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+}
+section.card > h2 small { color: var(--muted); font-weight: 400; }
+.empty { padding: 16px 14px; color: var(--muted); }
+
+.pending-list { display: grid; gap: 10px; padding: 12px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.pcard { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; padding: 10px 12px; }
+.pcard .t { font-weight: 600; }
+.pcard .m { color: var(--muted); font-size: 12px; margin: 2px 0 8px; }
+.pcard .btns { display: flex; gap: 8px; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+tr:last-child td { border-bottom: 0; }
+td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+
+.chip {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500;
+  color: var(--tone); background: color-mix(in srgb, var(--tone) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+}
+.chip.ok { --tone: var(--ok); } .chip.warn { --tone: var(--warn); }
+.chip.bad { --tone: var(--bad); } .chip.info { --tone: var(--info); }
+.chip.muted { --tone: var(--muted); }
+
+.risk { display: inline-flex; align-items: center; gap: 8px; }
+.bar { width: 64px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; display: inline-block; }
+.bar > i { display: block; height: 100%; background: var(--tone, var(--info)); }
+.bar.ok > i { --tone: var(--ok); } .bar.warn > i { --tone: var(--warn); } .bar.bad > i { --tone: var(--bad); }
+
+.btn {
+  font: inherit; cursor: pointer; padding: 5px 12px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text);
+}
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.btn:disabled { opacity: .55; cursor: progress; }
+.btn.approve { background: var(--ok); border-color: var(--ok); color: #fff; }
+.btn.reject { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
+.btn.confirm { background: var(--warn); border-color: var(--warn); color: #111; font-weight: 600; }
+
+.timer { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+
+#toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; max-width: min(360px, calc(100vw - 32px)); z-index: 10; }
+.toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--info); border-radius: 8px; padding: 8px 12px; box-shadow: 0 6px 20px rgb(0 0 0 / .25); }
+.toast.ok { border-left-color: var(--ok); } .toast.bad { border-left-color: var(--bad); }
+
+@media (max-width: 640px) {
+  header.top h1 { flex-basis: 100%; }
+  th, td { padding: 8px 10px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Saldırı Tespit Paneli</h1>
+    <span id="conn" class="pill" role="status" aria-live="polite"><span class="dot"></span><span id="conn-text">Bağlanıyor…</span></span>
+    <span class="pill" title="{{ mode_label }}">Kademe: <b>{{ mode }}</b></span>
+    <span class="who">{{ username }} · <a href="/admin/">Yönetim</a></span>
+  </header>
+
+  <div id="banner" class="banner" hidden role="alert"></div>
+
+  <div class="kpis">
+    <div class="kpi" id="kpi-pending"><div class="n">0</div><div class="l">Onay bekleyen eylem</div></div>
+    <div class="kpi" id="kpi-blocks"><div class="n">0</div><div class="l">Aktif engel</div></div>
+    <div class="kpi" id="kpi-high"><div class="n">0</div><div class="l">Yüksek riskli olay</div></div>
+    <div class="kpi" id="kpi-refused"><div class="n">0</div><div class="l">Korumalı hedef nedeniyle reddedilen</div></div>
+  </div>
+
+  <section class="card">
+    <h2>Onay bekleyen eylemler <small>karar senin</small></h2>
+    <div id="pending"></div>
+  </section>
+
+  <section class="card">
+    <h2>Eylemler <small id="actions-count"></small></h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Tür</th><th>Hedef</th><th>Durum</th><th>Kalan süre</th><th>Olay</th><th></th></tr></thead>
+        <tbody id="actions-body"></tbody>
+      </table>
+    </div>
+    <div id="actions-empty" class="empty" hidden>Henüz eylem yok.</div>
+  </section>
+
+  <section class="card">
+    <h2>Olaylar <small id="events-count"></small></h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Zaman</th><th>Kaynak IP</th><th>Hedef</th><th>Saldırı türü</th><th>Risk</th><th>Düzey</th><th>Durum</th><th>Özet</th></tr></thead>
+        <tbody id="events-body"></tbody>
+      </table>
+    </div>
+    <div id="events-empty" class="empty" hidden>Henüz olay yok.</div>
+  </section>
+</div>
+<div id="toasts" aria-live="polite"></div>
+
+{{ config|json_script:"panel-config" }}
+<script nonce="{{ csp_nonce }}" src="{{ centrifuge_src }}" integrity="{{ centrifuge_sri }}" crossorigin="anonymous"></script>
+<script nonce="{{ csp_nonce }}" id="panel-js">
+{% verbatim %}
+(() => {
+  'use strict';
+  const cfg = JSON.parse(document.getElementById('panel-config').textContent);
+  const $ = (id) => document.getElementById(id);
+
+  // Metin etiketleri yalnızca bu sabit tablolardan gelir; olay verisi HTML olarak ayrıştırılmaz, yalnızca textContent ile basılır.
+  const KIND = { block_ip: 'IP engelle', isolate_host: 'Host izole et', config_fix: 'Yapılandırma düzeltmesi' };
+  const STATUS = {
+    pending_approval: ['Onay bekliyor', 'warn'], executed: ['Uygulandı', 'ok'],
+    dry_run: ['Kuru çalıştırma', 'info'], rejected: ['Reddedildi', 'muted'],
+    refused: ['Korumalı hedef, reddedildi', 'bad'], expired: ['Süre doldu', 'muted'],
+    rolled_back: ['Geri alındı', 'info'], failed: ['Başarısız', 'bad'],
+  };
+  const LEVEL = { low: ['Düşük', 'info'], medium: ['Orta', 'warn'], high: ['Yüksek', 'bad'] };
+  const EVSTATUS = { new: 'Yeni', investigating: 'İnceleniyor', resolved: 'Çözüldü', dismissed: 'Yanlış alarm' };
+  const MAX_KEEP = 200;
+  const CONFIRM_MS = 4000;
+
+  const events = new Map();
+  const actions = new Map();
+  const live = new Map();     // "a:12" -> yayının geldiği an (snapshot'ın eskisi ezmesini önler)
+  const busy = new Set();     // uçuştaki RPC'ler
+  const armed = new Map();    // "method:id" -> onay penceresi bitiş zamanı
+
+  // ---- DOM yardımcıları ----------------------------------------------------
+  function el(tag, opts, ...children) {
+    const n = document.createElement(tag);
+    const o = opts || {};
+    if (o.cls) n.className = o.cls;
+    if (o.text != null) n.textContent = String(o.text);
+    if (o.title) n.title = String(o.title);
+    if (o.attrs) for (const [k, v] of Object.entries(o.attrs)) n.setAttribute(k, String(v));
+    for (const c of children) if (c) n.append(c);
+    return n;
+  }
+  const chip = (pair, fallback) => {
+    const [label, tone] = pair || [fallback || '?', 'muted'];
+    return el('span', { cls: 'chip ' + tone, text: label });
+  };
+  const fmtTime = (iso) => {
+    const d = new Date(iso);
+    return isNaN(d) ? '' : d.toLocaleTimeString('tr-TR');
+  };
+  function timer(untilIso) {
+    const t = Date.parse(untilIso);
+    const n = el('span', { cls: 'timer' });
+    if (isNaN(t)) { n.textContent = '—'; return n; }
+    n.dataset.until = String(t);
+    n.textContent = remaining(t);
+    return n;
+  }
+  function remaining(t) {
+    const s = Math.floor((t - Date.now()) / 1000);
+    if (s <= 0) return 'süre doldu';
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    const mm = String(m).padStart(2, '0'), rr = String(r).padStart(2, '0');
+    return h ? `${h}:${mm}:${rr}` : `${m}:${rr}`;
+  }
+  setInterval(() => {
+    for (const n of document.querySelectorAll('.timer[data-until]')) n.textContent = remaining(Number(n.dataset.until));
+  }, 1000);
+
+  function toast(text, tone) {
+    const t = el('div', { cls: 'toast ' + (tone || ''), text });
+    $('toasts').append(t);
+    setTimeout(() => t.remove(), 6000);
+  }
+  function banner(nodes) {
+    const b = $('banner');
+    b.replaceChildren(...nodes);
+    b.hidden = !nodes.length;
+  }
+
+  // ---- Durum ---------------------------------------------------------------
+  function upsert(map, item) {
+    if (!item || typeof item.id !== 'number') return;
+    map.set(item.id, item);
+    if (map.size > MAX_KEEP) {
+      const ids = [...map.keys()].sort((a, b) => a - b);
+      for (const id of ids.slice(0, map.size - MAX_KEEP)) map.delete(id);
+    }
+  }
+  const sortedDesc = (map) => [...map.values()].sort((a, b) => b.id - a.id);
+  const isPending = (a) => a.status === 'pending_approval' && (!a.approval_deadline || Date.parse(a.approval_deadline) > Date.now());
+  const isActiveBlock = (a) => a.status === 'executed' && a.kind === 'block_ip' && a.effect_expires_at && Date.parse(a.effect_expires_at) > Date.now();
+
+  function handlePublication(data) {
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'event') { upsert(events, data); live.set('e:' + data.id, Date.now()); }
+    else if (data.type === 'action') { upsert(actions, data); live.set('a:' + data.id, Date.now()); }
+    else return;
+    scheduleRender();
+  }
+
+  let snapBusy = false;
+  async function loadSnapshot() {
+    if (snapBusy) return;
+    snapBusy = true;
+    const t0 = Date.now();
+    try {
+      const r = await fetch(cfg.snapshotUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (r.status === 403) { banner([document.createTextNode('Oturum geçersiz. '), el('a', { text: 'Yeniden giriş yap', attrs: { href: '/admin/login/?next=/panel/' } })]); return; }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      for (const e of d.events || []) if ((live.get('e:' + e.id) || 0) < t0) upsert(events, e);
+      for (const a of d.actions || []) if ((live.get('a:' + a.id) || 0) < t0) upsert(actions, a);
+      scheduleRender();
+    } catch (err) {
+      toast('Veri alınamadı: ' + err.message, 'bad');
+    } finally {
+      snapBusy = false;
+    }
+  }
+
+  // ---- RPC (onay / red / geri alma) ----------------------------------------
+  const METHODS = { approve: 'ids:approve_action', reject: 'ids:reject_action', rollback: 'ids:rollback_action' };
+  let client = null;
+
+  async function act(id, method) {
+    const key = method + ':' + id;
+    armed.delete(key);
+    busy.add(key);
+    scheduleRender();
+    try {
+      if (!client) throw new Error('canlı bağlantı yok');
+      const res = await client.rpc(method, { action_id: id });
+      const d = res && res.data;
+      if (d && actions.has(d.action_id)) {
+        actions.set(d.action_id, Object.assign({}, actions.get(d.action_id), { status: d.status }));
+        live.set('a:' + d.action_id, Date.now());
+      }
+      toast(`Eylem #${id}: ${(STATUS[d && d.status] || [d && d.status || 'tamam'])[0]}`, 'ok');
+    } catch (e) {
+      toast(`Eylem #${id}: ${e.message || 'hata'}${e.code ? ' (' + e.code + ')' : ''}`, 'bad');
+    } finally {
+      busy.delete(key);
+      scheduleRender();
+      loadSnapshot();
+    }
+  }
+
+  function actionButton(label, cls, id, method, needConfirm) {
+    const key = method + ':' + id;
+    const isArmed = (armed.get(key) || 0) > Date.now();
+    const b = el('button', { cls: 'btn ' + cls + (isArmed ? ' confirm' : ''), text: isArmed ? 'Emin misin? ' + label : label, attrs: { type: 'button' } });
+    if (busy.has(key)) b.disabled = true;
+    b.addEventListener('click', () => {
+      if (needConfirm && !((armed.get(key) || 0) > Date.now())) {
+        armed.set(key, Date.now() + CONFIRM_MS);
+        scheduleRender();
+        setTimeout(scheduleRender, CONFIRM_MS + 50);
+        return;
+      }
+      act(id, method);
+    });
+    return b;
+  }
+
+  // ---- Çizim ---------------------------------------------------------------
+  let renderQueued = false;
+  function scheduleRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => { renderQueued = false; render(); });
+  }
+
+  function setKpi(id, n) {
+    const box = $(id);
+    box.querySelector('.n').textContent = String(n);
+  }
+
+  function render() {
+    const acts = sortedDesc(actions);
+    const evs = sortedDesc(events);
+    const pending = acts.filter(isPending).sort((a, b) => Date.parse(a.approval_deadline || 0) - Date.parse(b.approval_deadline || 0));
+
+    setKpi('kpi-pending', pending.length);
+    $('kpi-pending').classList.toggle('attn', pending.length > 0);
+    setKpi('kpi-blocks', acts.filter(isActiveBlock).length);
+    setKpi('kpi-high', evs.filter((e) => e.risk_level === 'high').length);
+    setKpi('kpi-refused', acts.filter((a) => a.status === 'refused').length);
+    document.title = (pending.length ? `(${pending.length}) ` : '') + 'Saldırı Tespit Paneli';
+
+    // Onay bekleyenler
+    const pbox = $('pending');
+    if (!pending.length) {
+      pbox.replaceChildren(el('div', { cls: 'empty', text: 'Onay bekleyen eylem yok.' }));
+    } else {
+      const list = el('div', { cls: 'pending-list' });
+      for (const a of pending) {
+        const risky = a.kind !== 'block_ip';
+        const meta = el('div', { cls: 'm' });
+        meta.append(`Olay #${a.event_id ?? '—'} · kalan `, timer(a.approval_deadline));
+        if (a.ttl_seconds) meta.append(` · engel süresi ${Math.round(a.ttl_seconds / 60)} dk`);
+        list.append(el('div', { cls: 'pcard' },
+          el('div', { cls: 't' }, document.createTextNode(`${KIND[a.kind] || a.kind}: `), el('span', { cls: 'mono', text: a.target })),
+          meta,
+          el('div', { cls: 'btns' },
+            actionButton('Onayla', 'approve', a.id, METHODS.approve, risky),
+            actionButton('Reddet', 'reject', a.id, METHODS.reject, false))));
+      }
+      pbox.replaceChildren(list);
+    }
+
+    // Eylemler tablosu
+    $('actions-count').textContent = acts.length ? `son ${acts.length}` : '';
+    $('actions-empty').hidden = acts.length > 0;
+    $('actions-body').replaceChildren(...acts.map((a) => {
+      const until = a.status === 'pending_approval' ? a.approval_deadline : (isActiveBlock(a) ? a.effect_expires_at : null);
+      return el('tr', {},
+        el('td', { cls: 'mono', text: a.id }),
+        el('td', { text: KIND[a.kind] || a.kind }),
+        el('td', { cls: 'mono', text: a.target }),
+        el('td', {}, chip(STATUS[a.status], a.status)),
+        el('td', {}, until ? timer(until) : el('span', { cls: 'muted', text: '—' })),
+        el('td', { cls: 'mono', text: a.event_id != null ? '#' + a.event_id : '—' }),
+        el('td', {}, isActiveBlock(a) || (a.status === 'executed' && a.kind === 'isolate_host')
+          ? actionButton('Geri al', '', a.id, METHODS.rollback, false) : null));
+    }));
+
+    // Olaylar tablosu
+    $('events-count').textContent = evs.length ? `son ${evs.length}` : '';
+    $('events-empty').hidden = evs.length > 0;
+    $('events-body').replaceChildren(...evs.map((e) => {
+      const risk = Math.max(0, Math.min(1, Number(e.risk_score) || 0));
+      const lv = LEVEL[e.risk_level];
+      const tone = lv ? lv[1] : 'info';
+      const fill = el('i');
+      fill.style.width = Math.round(risk * 100) + '%';
+      return el('tr', {},
+        el('td', { cls: 'mono', text: e.id }),
+        el('td', { text: fmtTime(e.created_at) }),
+        el('td', { cls: 'mono', text: e.source_ip }),
+        el('td', { text: e.target_host || '—' }),
+        el('td', { text: e.attack_type }),
+        el('td', {}, el('span', { cls: 'risk' }, el('span', { cls: 'bar ' + tone }, fill), el('b', { cls: 'mono', text: risk.toFixed(2) }))),
+        el('td', {}, chip(lv, e.risk_level)),
+        el('td', { text: EVSTATUS[e.status] || e.status }),
+        el('td', { cls: 'wrap-cell', text: e.summary || '', title: e.summary || '' }));
+    }));
+  }
+
+  // ---- Bağlantı ------------------------------------------------------------
+  function setConn(tone, text) {
+    $('conn').className = 'pill ' + tone;
+    $('conn-text').textContent = text;
+  }
+
+  function start() {
+    render();
+    loadSnapshot();
+    if (typeof Centrifuge === 'undefined') {
+      setConn('bad', 'Canlı bağlantı yok');
+      banner([document.createTextNode('Centrifuge istemcisi yüklenemedi (ağ veya bütünlük kontrolü). Liste yüklendiğinde görünür ama canlı güncelleme ve butonlar çalışmaz.')]);
+      return;
+    }
+    client = new Centrifuge(cfg.wsUrl);
+    client.on('connecting', () => setConn('warn', 'Bağlanıyor…'));
+    client.on('connected', () => { setConn('ok', 'Canlı'); banner([]); loadSnapshot(); });
+    client.on('disconnected', (ctx) => {
+      setConn('bad', 'Bağlantı yok');
+      if (ctx && ctx.code === 4501) {
+        banner([document.createTextNode('Canlı bağlantı oturum doğrulamasından geçemedi. Sayfayı '), el('code', { text: 'localhost' }), document.createTextNode(' ile açtığından ve yönetici (is_staff) olarak giriş yaptığından emin ol. '), el('a', { text: 'Giriş', attrs: { href: '/admin/login/?next=/panel/' } })]);
+      }
+    });
+    client.on('error', (ctx) => console.warn('centrifuge error', ctx));
+    for (const ch of cfg.channels) {
+      const sub = client.newSubscription(ch);
+      sub.on('publication', (ctx) => handlePublication(ctx.data));
+      sub.on('subscribed', () => loadSnapshot());
+      sub.on('error', (ctx) => {
+        const err = ctx && ctx.error;
+        toast(`Kanal ${ch}: ${err && err.message ? err.message : 'abonelik hatası'}`, 'bad');
+      });
+      sub.subscribe();
+    }
+    client.connect();
+  }
+
+  start();
+})();
+{% endverbatim %}
+</script>
+</body>
+</html>

@@ -24,7 +24,6 @@ from django.views.decorators.http import require_POST
 from . import actions, realtime
 from .actions import ActionError
 
-SESSION_TTL = 300  # sn; refresh proxy ile oturum iptali en geç bu sürede yansır
 ALLOWED_CHANNELS = {realtime.CHANNEL_FEED, realtime.CHANNEL_ACTIONS}
 
 RPC_METHODS = {
@@ -60,6 +59,11 @@ def proxy_view(view):
     return wrapper
 
 
+def _expire_at():
+    # refresh proxy ile oturum iptali en geç bu sürede yansır
+    return int(time.time()) + settings.RT_SESSION_TTL_SECONDS
+
+
 def _staff_user_by_id(user_id):
     User = get_user_model()
     try:
@@ -82,9 +86,7 @@ def connect(request, body):
     user = request.user
     if not (user.is_authenticated and user.is_active and user.is_staff):
         return _disconnect()
-    return JsonResponse(
-        {"result": {"user": str(user.pk), "expire_at": int(time.time()) + SESSION_TTL}}
-    )
+    return JsonResponse({"result": {"user": str(user.pk), "expire_at": _expire_at()}})
 
 
 @proxy_view
@@ -93,7 +95,7 @@ def refresh(request, body):
     # Cookie hâlâ geçerli mi? (iptal edilmiş oturum yenilenmemeli)
     if user is None or not request.user.is_authenticated or request.user.pk != user.pk:
         return JsonResponse({"result": {"expired": True}})
-    return JsonResponse({"result": {"expire_at": int(time.time()) + SESSION_TTL}})
+    return JsonResponse({"result": {"expire_at": _expire_at()}})
 
 
 @proxy_view

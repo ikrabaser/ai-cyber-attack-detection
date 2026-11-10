@@ -111,6 +111,14 @@ RT_API_KEY = env("RT_API_KEY", "")
 # Boşsa proxy uç noktaları her isteği reddeder (güvenli varsayılan).
 RT_PROXY_SECRET = env("RT_PROXY_SECRET", "")
 
+# Tarayıcı -> Centrifugo (panel). RT_WS_URL boşsa panel, sayfanın açıldığı ana makine
+# adı + RT_PUBLIC_PORT ile adresi kendisi türetir (çerezin gitmesi için aynı ana makine).
+# Panel bağlantısının oturum ömrü (sn). Centrifugo süre dolmadan refresh proxy'yi çağırır;
+# oturum iptal edilmişse bağlantı en geç bu sürede kapanır.
+RT_SESSION_TTL_SECONDS = int(env("RT_SESSION_TTL_SECONDS", "300"))
+RT_WS_URL = env("RT_WS_URL", "")
+RT_PUBLIC_PORT = env("RT_PUBLIC_PORT", "8001")
+
 # --- Sensör girişi --------------------------------------------------------
 
 # POST /api/events/ için Bearer token. Boşsa uç nokta her isteği reddeder.

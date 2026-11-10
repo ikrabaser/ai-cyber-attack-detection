@@ -276,6 +276,16 @@ class CentrifugoProxyTests(TestCase):
         gone = self.post("/centrifugo/refresh/", {"user": "99999"}).json()
         self.assertTrue(gone["result"]["expired"])
 
+    @override_settings(RT_SESSION_TTL_SECONDS=10)
+    def test_session_lifetime_is_configurable(self):
+        import time
+
+        self.client.force_login(self.staff)
+        data = self.post("/centrifugo/connect/").json()
+        self.assertTrue(8 <= data["result"]["expire_at"] - int(time.time()) <= 12)
+        again = self.post("/centrifugo/refresh/", {"user": str(self.staff.pk)}).json()
+        self.assertTrue(8 <= again["result"]["expire_at"] - int(time.time()) <= 12)
+
     def test_refresh_without_cookie_expires(self):
         out = self.post("/centrifugo/refresh/", {"user": str(self.staff.pk)}).json()
         self.assertTrue(out["result"]["expired"])
@@ -315,3 +325,83 @@ class CentrifugoProxyTests(TestCase):
         # Boş yanıt Centrifugo'da "izin verildi" sayılır; hatalar daima açık error içermeli.
         out = self.post("/centrifugo/rpc/", {"user": "", "method": "ids:approve_action"}).json()
         self.assertIn("error", out)
+
+
+class PanelTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user("ops", password="x", is_staff=True)
+        self.plain = User.objects.create_user("guest", password="x")
+
+    def test_panel_requires_staff(self):
+        for user in (None, self.plain):
+            if user:
+                self.client.force_login(user)
+            resp = self.client.get("/panel/")
+            self.assertEqual(resp.status_code, 302, user)
+            self.assertIn("/admin/login/", resp["Location"])
+
+    def test_panel_renders_for_staff_with_strict_csp(self):
+        self.client.force_login(self.staff)
+        resp = self.client.get("/panel/", HTTP_HOST="127.0.0.1:8000")
+        self.assertEqual(resp.status_code, 200)
+        csp = resp["Content-Security-Policy"]
+        nonce = csp.split("'nonce-")[1].split("'")[0]
+        body = resp.content.decode()
+        self.assertGreaterEqual(body.count(f'nonce="{nonce}"'), 3)  # style + 2 script
+        self.assertIn("default-src 'none'", csp)
+        self.assertNotIn("unsafe-inline", csp)
+        self.assertNotIn("unsafe-eval", csp)
+        self.assertIn("img-src data:", csp)
+        self.assertIn("connect-src 'self' ws://127.0.0.1:8001", csp)
+        self.assertIn("centrifuge@5.7.4", body)
+        self.assertIn('integrity="sha384-', body)
+        self.assertEqual(resp["Cache-Control"], "no-store")
+
+    def test_ws_url_follows_page_host_so_cookie_reaches_centrifugo(self):
+        self.client.force_login(self.staff)
+        body = self.client.get("/panel/", HTTP_HOST="localhost:8000").content.decode()
+        self.assertIn("ws://localhost:8001/connection/websocket", body)
+
+    @override_settings(RT_WS_URL="wss://ids.example.test/connection/websocket")
+    def test_ws_url_can_be_configured(self):
+        self.client.force_login(self.staff)
+        resp = self.client.get("/panel/")
+        self.assertIn("connect-src 'self' wss://ids.example.test", resp["Content-Security-Policy"])
+
+    def test_panel_never_uses_innerhtml(self):
+        # Olay alanları saldırgan kontrolünde; yalnızca textContent ile basılmalı.
+        from pathlib import Path
+
+        template = Path(__file__).parent / "templates" / "core" / "panel.html"
+        source = template.read_text(encoding="utf-8")
+        for banned in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("):
+            self.assertNotIn(banned, source)
+
+    def test_snapshot_requires_staff_and_returns_json_403(self):
+        resp = self.client.get("/panel/api/snapshot/")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json(), {"error": "yetkisiz"})
+        self.client.force_login(self.plain)
+        self.assertEqual(self.client.get("/panel/api/snapshot/").status_code, 403)
+
+    def test_snapshot_lists_latest_first_in_realtime_format(self):
+        self.client.force_login(self.staff)
+        first = make_event("203.0.113.7")
+        second = make_event("203.0.113.8")
+        action = actions.propose_action(second, "block_ip", "203.0.113.8")
+        data = self.client.get("/panel/api/snapshot/").json()
+        self.assertEqual([e["id"] for e in data["events"]], [second.pk, first.pk])
+        self.assertEqual(data["events"][0]["type"], "event")
+        self.assertEqual(data["actions"][0]["id"], action.pk)
+        self.assertEqual(data["actions"][0]["type"], "action")
+        self.assertEqual(data["actions"][0]["status"], "pending_approval")
+
+    def test_snapshot_does_not_leak_features(self):
+        self.client.force_login(self.staff)
+        Event.objects.create(
+            source_ip="203.0.113.7", risk_score=0.9, risk_level="high",
+            features={"secret": "internal"}, summary="<script>alert(1)</script>",
+        )
+        resp = self.client.get("/panel/api/snapshot/")
+        self.assertEqual(resp["Content-Type"], "application/json")
+        self.assertNotIn("internal", resp.content.decode())

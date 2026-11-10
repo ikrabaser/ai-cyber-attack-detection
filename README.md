@@ -59,9 +59,26 @@ docker compose up --build
 docker compose exec backend python manage.py createsuperuser   # is_staff = panel kullanıcısı
 ```
 
+- **Canlı panel:** http://localhost:8000/panel/ (yalnızca `is_staff` kullanıcı; giriş admin sayfasından)
 - Django admin: http://localhost:8000/admin/ (olaylar, eylemler, **denetim kaydı**)
 - Centrifugo: ws://localhost:8001/connection/websocket (panel `localhost:8000` üzerinden bağlanmalı,
   çerez aynı host'ta paylaşılır; `allowed_origins` `centrifugo/config.json` içinde)
+
+### Panel
+
+Tek sayfa, Django'dan servis edilir. Açılınca son olaylar/eylemler yüklenir, sonrası Centrifugo
+üzerinden canlı akar (yenileme gerekmez).
+
+- **Onay bekleyen eylemler** kartlarında Onayla / Reddet. Host izolasyonu ve yapılandırma düzeltmesi
+  için onay iki tıklamalı ("Emin misin?"). Uygulanmış engel ve izolasyonlarda **Geri al**.
+- Butonlar `ids:approve_action`, `ids:reject_action`, `ids:rollback_action` RPC'lerini çağırır; karar
+  yine doğrulanmış `is_staff` oturumundan ve `core.actions` politika katmanından geçer.
+- Olay alanları saldırgan kontrolünde olabileceği için yalnızca `textContent` ile basılır; sayfa
+  nonce'lu sıkı bir CSP ile gelir (dış bağlantı yalnızca Centrifugo).
+- İstemci kütüphanesi (`centrifuge-js 5.7.4`) CDN'den, sürüm ve bütünlük (SRI) hash'i sabitlenmiş
+  olarak yüklenir; internet gerekir. Yüklenemezse panel bunu bir uyarıyla bildirir.
+- İsteğe bağlı ortam değişkenleri: `RT_SESSION_TTL_SECONDS` (varsayılan 300; oturum iptalinin
+  bağlantıyı kapatma süresi), `RT_PUBLIC_PORT` (8001), `RT_WS_URL` (boşsa sayfanın ana makine adından türetilir).
 
 ### Boru hattını sensör olmadan deneme
 
@@ -80,26 +97,27 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 40 test, Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 49 test, Postgres gerekmez
 ```
 
-## Doğrulanmayanlar (ilk `docker compose up`'ta kontrol et)
+## Doğrulananlar ve doğrulanmayanlar
 
-Bu ortamda Docker çalıştırılamadı; testler sqlite üzerinde ve Procrastinate kuyruğu olmadan koştu.
+Gerçek Centrifugo 6.9.7 + PostgreSQL + Procrastinate worker + Chromium ile uçtan uca denendi:
+connect/subscribe/rpc proxy sırları, refresh proxy'de Cookie iletimi ve iptal edilen oturumun
+bağlantıyı kapatması, canlı olay/eylem akışı, onay/red/geri alma, korumalı IP'nin reddi ve
+saldırgan kontrollü metinlerin (HTML/script) etkisiz kalması.
 
-1. **Centrifugo proxy sırrı env adları:** `CONNECT` için olanı dokümantasyonda gördüm;
-   `REFRESH`, `SUBSCRIBE` ve `RPC` için aynı adlandırma desenini kullandım
-   (`docker-compose.yml`). Bir proxy 403 dönüyorsa `docker compose logs centrifugo backend` bak.
-2. **Refresh proxy'de Cookie iletimi:** gelmezse oturum `expired` sayılır, istemci yeniden bağlanır
-   (connect'te Cookie var); yani güvenli tarafta başarısız olur.
-3. **Procrastinate worker:** `docker compose logs worker`; `investigate_event` ve periyodik
-   `expire_actions` görevleri görünmeli.
+Henüz denenmeyenler:
+
+1. **Panelin CDN betiği:** `centrifuge-js` SRI hash'i npm paketinden hesaplandı, CDN'e test ortamından
+   erişilemedi. Panelde "Centrifuge istemcisi yüklenemedi" uyarısı çıkarsa nedeni budur (internet
+   veya hash).
+2. **Gerçek ağ trafiği:** olaylar şimdilik `emit_test_event` ile üretiliyor; sensör, modeller ve
+   gerçek güvenlik duvarı arka ucu yok.
 
 ## Sonraki adımlar
 
-1. Panel: Centrifugo'ya bağlanan canlı olay/eylem listesi + onay/red butonları (`ids:approve_action`,
-   `ids:reject_action`, `ids:rollback_action` RPC'leri hazır).
-2. Lab: izole VM'ler, Zeek, `conn.log` → özellik çıkarma → `POST /api/events/`.
-3. XGBoost baseline, ardından Autoencoder; karar tablosu ve eşikler (PR eğrisi).
-4. Claude agent: `core/agent.py` içindeki `RuleAgent` yerine, araçları `core.actions` üzerinden geçen agent.
-5. Gerçek güvenlik duvarı arka ucu (lab ağ geçidi) ve kontrollü saldırı senaryoları ile ölçüm.
+1. Lab: izole VM'ler, Zeek, `conn.log` → özellik çıkarma → `POST /api/events/`.
+2. XGBoost baseline, ardından Autoencoder; karar tablosu ve eşikler (PR eğrisi).
+3. Claude agent: `core/agent.py` içindeki `RuleAgent` yerine, araçları `core.actions` üzerinden geçen agent.
+4. Gerçek güvenlik duvarı arka ucu (lab ağ geçidi) ve kontrollü saldırı senaryoları ile ölçüm.
