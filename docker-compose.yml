@@ -1,0 +1,72 @@
+name: siber-saldiri-tespit
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ids}
+      POSTGRES_USER: ${POSTGRES_USER:-ids}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env dosyasında tanımlı olmalı}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+    command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz/')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Procrastinate işçisi: eşiği aşan olayları (investigate_event) ve periyodik
+  # görevleri (expire_actions) çalıştırır. Agent bu serviste koşacak.
+  worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+    command: python manage.py procrastinate worker
+    volumes:
+      - ./backend:/app
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  centrifugo:
+    image: centrifugo/centrifugo:v6
+    command: centrifugo --config=/centrifugo/config.json
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./centrifugo/config.json:/centrifugo/config.json:ro
+    environment:
+      # Sunucu API'si (backend -> Centrifugo yayın): X-API-Key
+      CENTRIFUGO_HTTP_API_KEY: ${RT_API_KEY:?RT_API_KEY .env dosyasında tanımlı olmalı}
+      # Proxy isteklerine eklenen ortak sır; backend bunu doğrular.
+      # Proxy'ler farklı yapılandırma yollarında olduğu için her biri ayrı tanımlanır.
+      CENTRIFUGO_CLIENT_PROXY_CONNECT_HTTP_STATIC_HEADERS: '{"X-Centrifugo-Proxy-Secret":"${RT_PROXY_SECRET:?RT_PROXY_SECRET .env dosyasında tanımlı olmalı}"}'
+      CENTRIFUGO_CLIENT_PROXY_REFRESH_HTTP_STATIC_HEADERS: '{"X-Centrifugo-Proxy-Secret":"${RT_PROXY_SECRET}"}'
+      CENTRIFUGO_CHANNEL_PROXY_SUBSCRIBE_HTTP_STATIC_HEADERS: '{"X-Centrifugo-Proxy-Secret":"${RT_PROXY_SECRET}"}'
+      CENTRIFUGO_RPC_PROXY_HTTP_STATIC_HEADERS: '{"X-Centrifugo-Proxy-Secret":"${RT_PROXY_SECRET}"}'
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  pgdata:

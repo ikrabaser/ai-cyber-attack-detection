@@ -1,0 +1,45 @@
+{
+  "client": {
+    "allowed_origins": ["http://localhost:8000", "http://127.0.0.1:8000"],
+    "proxy": {
+      "connect": {
+        "enabled": true,
+        "endpoint": "http://backend:8000/centrifugo/connect/",
+        "timeout": "2s",
+        "http_headers": ["Cookie"]
+      },
+      "refresh": {
+        "enabled": true,
+        "endpoint": "http://backend:8000/centrifugo/refresh/",
+        "timeout": "2s",
+        "http_headers": ["Cookie"]
+      }
+    }
+  },
+  "channel": {
+    "proxy": {
+      "subscribe": {
+        "endpoint": "http://backend:8000/centrifugo/subscribe/",
+        "timeout": "2s"
+      }
+    },
+    "namespaces": [
+      {
+        "name": "events",
+        "subscribe_proxy_enabled": true
+      }
+    ]
+  },
+  "rpc": {
+    "proxy": {
+      "endpoint": "http://backend:8000/centrifugo/rpc/",
+      "timeout": "3s"
+    },
+    "namespaces": [
+      {
+        "name": "ids",
+        "proxy_enabled": true
+      }
+    ]
+  }
+}
