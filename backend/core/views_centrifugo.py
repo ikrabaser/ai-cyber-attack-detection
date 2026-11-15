@@ -24,7 +24,7 @@ from django.views.decorators.http import require_POST
 from . import actions, realtime
 from .actions import ActionError
 
-ALLOWED_CHANNELS = {realtime.CHANNEL_FEED, realtime.CHANNEL_ACTIONS}
+ALLOWED_CHANNELS = {realtime.CHANNEL_FEED, realtime.CHANNEL_ACTIONS, realtime.CHANNEL_PIPELINE}
 
 RPC_METHODS = {
     "ids:approve_action": actions.approve_action,

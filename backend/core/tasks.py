@@ -15,7 +15,8 @@ def investigate_event(event_id):
 
     event.summary = (summary or event.summary)[:2000]
     event.save(update_fields=["summary"])
-    audit.record("worker", "investigate_event", event.source_ip, "done", event_id=event.pk)
+    audit.record("worker", "investigate_event", event.source_ip, "done",
+                 event_id=event.pk, note=event.summary[:300])
     realtime.publish(realtime.CHANNEL_FEED, realtime.event_payload(event))
 
 

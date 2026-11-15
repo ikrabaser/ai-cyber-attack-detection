@@ -88,6 +88,12 @@ Tek sayfa, Django'dan servis edilir. Açılınca son olaylar/eylemler yüklenir,
   zamana göre grafiği (olay/orta/yüksek eşikleri kesikli çizgiyle), olaylar ve o IP'yle ilgili eylemler. Israr
   bonusunun risk basamaklarını bu grafikte görebilirsin. Kart açıkken ilgili yeni olay gelince yenilenir; Esc veya
   Kapat ile kapanır. IP sunucuda `ipaddress` ile doğrulanır; olayın ham `features` alanı hiçbir zaman gönderilmez.
+- **Canlı akış:** sensörden eyleme her adım (olay alındı, kuyruğa alındı, agent incelemesi, politika önerisi,
+  uygulama/ret, bildirim, süre dolumu) denetim kaydıyla aynı anda `events:pipeline` kanalından panele akar; en yeni
+  üstte, yeni satır kısa süre vurgulanır, "Duraklat" ile okunabilir. Kanal diğerleriyle aynı Centrifugo proxy
+  yetkisini kullanır (JWT yok, yalnızca doğrulanmış `is_staff` oturumu). Sadece beyaz listedeki alanlar yayınlanır
+  (adım, hedef, sonuç, olay/eylem numarası; agent notu yalnızca inceleme adımında) - hata metinleri ve `detail` içeriği
+  panele gitmez. Sayfa açılınca son 40 adım snapshot'tan gelir.
 - İstemci kütüphaneleri (`centrifuge-js 5.7.4`, `chart.js 4.6.1`) depodaki `backend/core/vendor/` altından, kendi
   sunucundan gelir (CDN yok, internet gerekmez, CSP'de dış script kaynağı yok). Bütünlük (SRI) hash'leri tarayıcıda
   kontrol edilir (testler hash'leri dosyalarla karşılaştırır); yüklenemezse panel bunu bir uyarıyla bildirir.
@@ -132,7 +138,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 117 test (+2 atlanır), Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 130 test (+2 atlanır), Postgres gerekmez
 ```
 
 Eşzamanlı öneri yarışının testi (`core/tests_concurrency.py`, 2 test) yalnızca PostgreSQL'de çalışır, sqlite'ta

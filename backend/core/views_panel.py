@@ -22,10 +22,11 @@ from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
 from . import event_filters, realtime, source_detail, stats
-from .models import Action, Event
+from .models import Action, AuditLog, Event
 
 SNAPSHOT_EVENTS = 50
 SNAPSHOT_ACTIONS = 100
+SNAPSHOT_STEPS = 40
 
 # İstemci kütüphanesi dış CDN'den değil, depodaki dosyadan (core/vendor/) sunulur: panel internetsiz
 # de çalışır, CSP'de dış script kaynağı gerekmez. Dosya npm paketinin `dist/centrifuge.js`'idir;
@@ -142,7 +143,7 @@ def panel(request):
             "statsUrl": "/panel/api/stats/",
             "eventsUrl": "/panel/api/events/",
             "sourceUrl": "/panel/api/source/",
-            "channels": [realtime.CHANNEL_FEED, realtime.CHANNEL_ACTIONS],
+            "channels": [realtime.CHANNEL_FEED, realtime.CHANNEL_ACTIONS, realtime.CHANNEL_PIPELINE],
         },
     }
     response = render(request, "core/panel.html", context)
@@ -156,10 +157,12 @@ def panel(request):
 def snapshot(request):
     events = Event.objects.order_by("-id")[:SNAPSHOT_EVENTS]
     actions = Action.objects.order_by("-id")[:SNAPSHOT_ACTIONS]
+    steps = AuditLog.objects.order_by("-id")[:SNAPSHOT_STEPS]
     response = JsonResponse(
         {
             "events": [realtime.event_payload(e) for e in events],
             "actions": [realtime.action_payload(a) for a in actions],
+            "steps": [realtime.pipeline_payload(s) for s in steps],
         }
     )
     response["Cache-Control"] = "no-store"

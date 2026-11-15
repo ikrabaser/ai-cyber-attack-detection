@@ -13,6 +13,9 @@ log = logging.getLogger(__name__)
 
 CHANNEL_FEED = "events:feed"
 CHANNEL_ACTIONS = "events:actions"
+CHANNEL_PIPELINE = "events:pipeline"
+
+NOTE_MAX = 300
 
 
 def publish(channel, data):
@@ -69,3 +72,29 @@ def action_payload(action):
         if action.effect_expires_at
         else None,
     }
+
+
+def _int_or_none(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def pipeline_payload(entry):
+    """Denetim kaydından panele giden adım. Yalnızca izin verilen alanlar: `detail` olduğu gibi
+    gönderilmez (hata metinleri, alıcı sayısı vb. dışarı çıkmaz)."""
+    detail = entry.detail if isinstance(entry.detail, dict) else {}
+    actor = entry.actor.split(":", 1)[0]  # "user:3" -> "user": kullanıcı numarası yayınlanmaz
+    payload = {
+        "type": "step",
+        "id": entry.pk,
+        "created_at": entry.created_at.isoformat(),
+        "actor": actor[:32],
+        "verb": entry.verb[:64],
+        "target": entry.target[:100],
+        "outcome": entry.outcome[:32],
+        "event_id": _int_or_none(detail.get("event_id")),
+        "action_id": _int_or_none(detail.get("action_id")),
+    }
+    note = detail.get("note")
+    if entry.verb == "investigate_event" and isinstance(note, str):
+        payload["note"] = note[:NOTE_MAX]
+    return payload

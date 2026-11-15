@@ -250,8 +250,7 @@ class ActionPolicyTests(TestCase):
         with mock.patch("core.realtime.publish") as pub:
             with self.captureOnCommitCallbacks(execute=True):
                 actions.propose_action(self.event, "block_ip", "203.0.113.7")
-        self.assertTrue(pub.called)
-        self.assertEqual(pub.call_args[0][0], "events:actions")
+        self.assertIn("events:actions", [c.args[0] for c in pub.call_args_list])
 
 
 class RuleAgentTests(TestCase):
@@ -285,7 +284,7 @@ class IngestTests(TestCase):
                 {"source_ip": "203.0.113.7", "risk_score": 0.95, "attack_type": "port_scan"}
             )
         self.assertEqual(event.risk_level, Event.Level.HIGH)
-        self.assertEqual(pub.call_args[0][0], "events:feed")
+        self.assertIn("events:feed", [c.args[0] for c in pub.call_args_list])
         enq.assert_called_once()
 
     def test_validation(self, pub, enq):

@@ -146,7 +146,23 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 .cv-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }
 .cv-empty[hidden] { display: none; }
 
+.flow { list-style: none; margin: 0; padding: 4px 0; max-height: 360px; overflow-y: auto; }
+.flow li { display: grid; grid-template-columns: 84px 92px 1fr; gap: 4px 12px; align-items: baseline; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.flow li:last-child { border-bottom: 0; }
+.flow .t { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.flow .note { grid-column: 3; color: var(--muted); font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+.flow .msg { white-space: normal; overflow-wrap: anywhere; }
+.flow li.fresh { background: color-mix(in srgb, var(--info) 14%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .flow li.fresh { animation: flowflash 2.4s ease-out; }
+}
+@keyframes flowflash { from { background: color-mix(in srgb, var(--info) 38%, transparent); } to { background: transparent; } }
+.flow-bar { display: flex; align-items: center; gap: 8px; }
+.flow-bar .btn[hidden] { display: none; }
+
 @media (max-width: 640px) {
+  .flow li { grid-template-columns: 1fr; }
+  .flow .note { grid-column: 1; }
   header.top h1 { flex-basis: 100%; }
   th, td { padding: 8px 10px; }
 }
@@ -173,6 +189,18 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
   <section class="card">
     <h2>Onay bekleyen eylemler <small>karar senin</small></h2>
     <div id="pending"></div>
+  </section>
+
+  <section class="card" id="flow-card" aria-labelledby="flow-title">
+    <h2>
+      <span id="flow-title">Canlı akış <small id="flow-sub">sensörden eyleme her adım</small></span>
+      <span class="flow-bar">
+        <small id="flow-paused" hidden>duraklatıldı</small>
+        <button type="button" class="btn small" id="flow-toggle" aria-pressed="false">Duraklat</button>
+      </span>
+    </h2>
+    <ul id="flow-list" class="flow" aria-live="off"></ul>
+    <div id="flow-empty" class="empty" hidden>Henüz adım yok. Sensör bir olay gönderdiğinde akış burada belirir.</div>
   </section>
 
   <section class="card">
@@ -310,11 +338,61 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
   };
   const LEVEL = { low: ['Düşük', 'info'], medium: ['Orta', 'warn'], high: ['Yüksek', 'bad'] };
   const EVSTATUS = { new: 'Yeni', investigating: 'İnceleniyor', resolved: 'Çözüldü', dismissed: 'Yanlış alarm' };
+
+  // Akış etiketleri de yalnızca sabit tablolardan gelir; bilinmeyen fiil/sonuç ham metin olarak (textContent) gösterilir.
+  const STAGE = {
+    ingest: ['Sensör', 'info'], enqueue: ['Kuyruk', 'muted'], investigate: ['Agent', 'info'],
+    propose: ['Politika', 'warn'], execute: ['Eylem', 'ok'], send: ['Bildirim', 'muted'],
+    reject: ['Karar', 'muted'], rollback: ['Karar', 'info'], expire: ['Sistem', 'muted'],
+  };
+  const STEP_TONE = {
+    created: 'ok', done: 'ok', sent: 'ok', executed: 'ok', rolled_back: 'ok', proposed: 'warn',
+    refused: 'bad', failed: 'bad', skipped: 'muted', deduplicated: 'muted', expired: 'muted',
+    rejected: 'muted', dry_run: 'info',
+  };
+  const FLOW_SHOW = 40;
+  const FLOW_KEEP = 80;
+  const KIND_IDS = Object.keys(KIND);
+
+  function splitVerb(verb) {
+    const i = verb.indexOf('_');
+    if (i < 0) return [verb, ''];
+    const head = verb.slice(0, i), rest = verb.slice(i + 1);
+    if (head === 'send' || head === 'ingest' || head === 'enqueue' || head === 'investigate') return [head, rest];
+    return KIND_IDS.includes(rest) ? [head, rest] : [verb, ''];
+  }
+  function stepText(st) {
+    const [head, rest] = splitVerb(st.verb);
+    const kind = KIND[rest] || rest;
+    const o = st.outcome;
+    const T = {
+      ingest: { created: 'Sensörden olay alındı' },
+      enqueue: { skipped: 'İnceleme kuyruğa alınmadı (aynı IP için görev zaten bekliyor)' },
+      investigate: { done: 'Agent incelemeyi tamamladı' },
+      propose: {
+        proposed: `${kind} önerildi`, refused: `${kind} önerisi korumalı hedef nedeniyle reddedildi`,
+        deduplicated: `${kind} zaten var, tekrar açılmadı`,
+      },
+      execute: {
+        executed: `${kind} uygulandı`, dry_run: `${kind} kuru çalıştırıldı`,
+        expired: `${kind} onay süresi dolduğu için uygulanmadı`, refused: `${kind} korumalı hedef, uygulanmadı`,
+        failed: `${kind} uygulanamadı`,
+      },
+      send: { sent: 'Bildirim e-postası gönderildi', skipped: 'Bildirim atlandı (bekleme süresi)', failed: 'Bildirim gönderilemedi' },
+      reject: { rejected: `${kind} operatör tarafından reddedildi` },
+      rollback: { rolled_back: `${kind} geri alındı`, failed: `${kind} geri alınamadı` },
+      expire: { expired: `${kind} süresi doldu` },
+    };
+    return (T[head] && T[head][o]) || `${st.verb} → ${o}`;
+  }
   const MAX_KEEP = 200;
   const CONFIRM_MS = 4000;
 
   const events = new Map();
   const actions = new Map();
+  const steps = new Map();    // canlı akış adımları (id -> adım)
+  const fresh = new Set();    // yayınla yeni gelen, henüz vurgulanmamış adımlar
+  let flowPaused = false;
   const live = new Map();     // "a:12" -> yayının geldiği an (snapshot'ın eskisi ezmesini önler)
   const busy = new Set();     // uçuştaki RPC'ler
   const armed = new Map();    // "method:id" -> onay penceresi bitiş zamanı
@@ -383,6 +461,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 
   function handlePublication(data) {
     if (!data || typeof data !== 'object') return;
+    if (data.type === 'step') { addStep(data, true); scheduleFlow(); return; }
     if (data.type === 'event') {
       upsert(events, data); live.set('e:' + data.id, Date.now());
       if (filterActive() && matchesFilter(data)) {
@@ -409,7 +488,9 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
       const d = await r.json();
       for (const e of d.events || []) if ((live.get('e:' + e.id) || 0) < t0) upsert(events, e);
       for (const a of d.actions || []) if ((live.get('a:' + a.id) || 0) < t0) upsert(actions, a);
+      for (const st of d.steps || []) addStep(st, false);
       scheduleRender();
+      scheduleFlow();
     } catch (err) {
       toast('Veri alınamadı: ' + err.message, 'bad');
     } finally {
@@ -994,6 +1075,64 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     loadStats();
   }
 
+  // ---- Canlı akış ----------------------------------------------------------
+  function addStep(st, isLive) {
+    if (!st || typeof st.id !== 'number' || typeof st.verb !== 'string' || typeof st.outcome !== 'string') return;
+    if (steps.has(st.id)) return;
+    steps.set(st.id, st);
+    if (isLive) fresh.add(st.id);
+    if (steps.size > FLOW_KEEP) {
+      const ids = [...steps.keys()].sort((a, b) => a - b);
+      for (const id of ids.slice(0, steps.size - FLOW_KEEP)) { steps.delete(id); fresh.delete(id); }
+    }
+  }
+
+  const IP_LIKE = /^[0-9a-f:.]{2,45}$/i;
+  let flowQueued = false;
+  function scheduleFlow() {
+    if (flowQueued || flowPaused) return;
+    flowQueued = true;
+    requestAnimationFrame(() => { flowQueued = false; renderFlow(); });
+  }
+
+  function renderFlow() {
+    const list = $('flow-list');
+    const items = [...steps.values()].sort((a, b) => b.id - a.id).slice(0, FLOW_SHOW);
+    $('flow-empty').hidden = items.length > 0;
+    list.hidden = items.length === 0;
+    const rows = items.map((st) => {
+      const [head] = splitVerb(st.verb);
+      const stage = STAGE[head] || [head, 'muted'];
+      const tone = STEP_TONE[st.outcome] || 'muted';
+      const msg = el('span', { cls: 'msg' });
+      msg.append(el('span', { text: stepText(st) }));
+      if (st.target && IP_LIKE.test(st.target) && /[.:]/.test(st.target)) {
+        msg.append(document.createTextNode(' · '), ipLink(st.target));
+      } else if (st.target) {
+        msg.append(document.createTextNode(' · '), el('span', { cls: 'mono', text: st.target }));
+      }
+      if (typeof st.event_id === 'number') msg.append(document.createTextNode(' '), el('span', { cls: 'muted', text: '(olay #' + st.event_id + ')' }));
+      const chipEl = el('span', { cls: 'chip ' + tone, text: stage[0] });
+      const li = el('li', { cls: fresh.has(st.id) ? 'fresh' : '' }, el('span', { cls: 't mono', text: fmtTime(st.created_at) }), chipEl, msg);
+      if (typeof st.note === 'string' && st.note) li.append(el('span', { cls: 'note', text: st.note }));
+      return li;
+    });
+    fresh.clear();
+    list.replaceChildren(...rows);
+  }
+
+  function initFlow() {
+    const btn = $('flow-toggle');
+    btn.addEventListener('click', () => {
+      flowPaused = !flowPaused;
+      btn.textContent = flowPaused ? 'Devam et' : 'Duraklat';
+      btn.setAttribute('aria-pressed', String(flowPaused));
+      $('flow-paused').hidden = !flowPaused;
+      if (!flowPaused) renderFlow();
+    });
+    renderFlow();
+  }
+
   // ---- Bağlantı ------------------------------------------------------------
   function setConn(tone, text) {
     $('conn').className = 'pill ' + tone;
@@ -1006,6 +1145,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     initFilters();
     initSource();
     initStats();
+    initFlow();
     if (typeof Centrifuge === 'undefined') {
       setConn('bad', 'Canlı bağlantı yok');
       banner([document.createTextNode('Centrifuge istemcisi yüklenemedi (dosya veya bütünlük kontrolü). Liste yüklendiğinde görünür ama canlı güncelleme ve butonlar çalışmaz.')]);
