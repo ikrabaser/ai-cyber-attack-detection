@@ -1,0 +1,578 @@
+diff --git a/README.md b/README.md
+index 2c8d230..635ff9d 100644
+--- a/README.md
++++ b/README.md
+@@ -123,6 +123,23 @@ saldırı türü en yüksek riskli olaya göre tutulur.
+   ajan incelemeleri (ajan, durum, not), olaylar ve eylemler. Liste ve açık kart `events:incidents` kanalından canlı güncellenir.
+   Olayın ham `features` alanı hiçbir yanıtta yoktur; metinler yalnızca `textContent` ile basılır.
+ 
++### Triage (kanıt ve öneri)
++
++Incident ayrıntı kartında **Triage** bölümü, "bu gerçek mi?" sorusu için kanıt toplar (`core/triage.py`). Kural tabanlı ve
++deterministiktir, yalnızca kendi verimizi kullanır (dış servis yok); kart her açıldığında taze hesaplanır, saklanmaz.
++Her kanıtın bir ağırlığı vardır (artı: saldırı yönünde, eksi: yanlış alarm yönünde, 0: bilgi); toplam puan bir **öneri**
++üretir (Saldırı olası / Yanlış alarm olası / Belirsiz). Karar yine insanındır: öneri `decide`'ı tetiklemez.
++
++- Kimlik: korumalı IP (güçlü yanlış alarm işareti), RFC1918 iç ağ (zayıf).
++- Geçmiş: aynı IP daha önce yanlış alarm mı çıktı, "Saldırıyı onayla" dendi mi (denetim kaydından), tekrarlayan kaynak mı.
++- Zincir: önce keşif (tarama, T1046) sonra kimlik bilgisi denemesi (brute force, T1110) varsa saldırı zinciri.
++- Davranış: başarısız bağlantı oranı, farklı port/makine sayısı, ısrar, düşük hacim; yalnızca sayısal özelliklerden türetilir.
++- Model riski ve engel sonrası etki (IP engellendikten sonra yeni olay geldi mi).
++
++`Event.features` ve saldırı türü saldırgan kontrollü sayılır: çıktıya yalnızca sayıya çevrilmiş değerler ve sabit metinler girer,
++serbest metin hiçbir zaman taşınmaz. API: incident ayrıntı yanıtında `triage` alanı. Dış tehdit istihbaratı ve hedefin
++auth log'u (saldırı başarılı oldu mu) sonraki sürümlerde.
++
+ ### Bildirim (e-posta)
+ 
+ İnsan kararı bekleyen her **yeni** eylem için (aynı IP'ye tekrarlanan olaylar tek eylem, tek e-posta üretir) ve
+@@ -160,7 +177,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
+ ```bash
+ cd backend
+ pip install -r requirements.txt
+-python manage.py test --settings=config.settings_test   # 180 test (+3 atlanır), Postgres gerekmez
++python manage.py test --settings=config.settings_test   # 201 test (+3 atlanır), Postgres gerekmez
+ ```
+ 
+ Eşzamanlı öneri ve incident yarışlarının testleri (`core/tests_concurrency.py`, 3 test) yalnızca PostgreSQL'de çalışır, sqlite'ta
+diff --git a/backend/core/incident_detail.py b/backend/core/incident_detail.py
+index 62fc3b5..62cee18 100644
+--- a/backend/core/incident_detail.py
++++ b/backend/core/incident_detail.py
+@@ -1,9 +1,10 @@
+ """Tek bir incident'in ayrıntısı: panelin incident kartı için.
+ 
+-Olayın `features` alanı (saldırgan kontrollü ham veri) hiçbir zaman dışarı çıkmaz.
++Olayın `features` alanı (saldırgan kontrollü ham veri) hiçbir zaman dışarı çıkmaz; triage yalnızca ondan türetilmiş
++sayıları ve sabit metinleri döndürür.
+ """
+ 
+-from . import realtime
++from . import realtime, triage
+ from .models import Action, AnalysisRun, Incident
+ from .protection import is_protected_ip
+ 
+@@ -53,9 +54,9 @@ def build_incident(raw_id):
+     except Incident.DoesNotExist:
+         raise IncidentNotFound("incident bulunamadı")
+ 
+-    events = incident.events.order_by("-created_at", "-id")[:MAX_EVENTS]
++    events = list(incident.events.order_by("-created_at", "-id")[:MAX_EVENTS])
+     runs = AnalysisRun.objects.filter(incident=incident).order_by("-started_at", "-id")[:MAX_RUNS]
+-    actions = Action.objects.filter(event__incident=incident).order_by("-id")[:MAX_ACTIONS]
++    actions = list(Action.objects.filter(event__incident=incident).order_by("-id")[:MAX_ACTIONS])
+ 
+     return {
+         "incident": realtime.incident_payload(incident),
+@@ -65,4 +66,5 @@ def build_incident(raw_id):
+         "events_truncated": incident.event_count > MAX_EVENTS,
+         "runs": [_run_item(r) for r in runs],
+         "actions": [_action_item(a) for a in actions],
++        "triage": triage.triage(incident, events, actions),
+     }
+diff --git a/backend/core/templates/core/panel.html b/backend/core/templates/core/panel.html
+index 18d0612..a635bee 100644
+--- a/backend/core/templates/core/panel.html
++++ b/backend/core/templates/core/panel.html
+@@ -140,6 +140,10 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+ #incd-title { outline: none; }
+ .incd-btns { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
+ .incd-btns:empty { display: none; }
++.tri-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 4px 14px 8px; }
++.tri-head:empty { display: none; }
++.tri-head .muted { color: var(--muted); font-size: 12px; }
++#incd-triage .w { font-variant-numeric: tabular-nums; font-weight: 600; }
+ #source-title { outline: none; }
+ .src-kpis { padding: 12px 12px 0; margin-bottom: 0; }
+ .charts.one { grid-template-columns: 1fr; }
+@@ -236,6 +240,9 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+       <div class="kpi"><div class="n" id="incd-risk">—</div><div class="l">En yüksek risk</div></div>
+     </div>
+     <div id="incd-btns" class="incd-btns" role="group" aria-label="Incident kararı"></div>
++    <h3 class="sub">Triage <span class="muted">kanıtlar ve öneri; karar senin</span></h3>
++    <div id="incd-triage-head" class="tri-head"></div>
++    <ul id="incd-triage" class="flow"></ul>
+     <h3 class="sub">Ajan incelemeleri</h3>
+     <ul id="incd-runs" class="flow"></ul>
+     <div id="incd-runs-empty" class="empty" hidden>Henüz inceleme yok.</div>
+@@ -568,6 +575,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+   }
+ 
+   // ---- RPC (onay / red / geri alma) ----------------------------------------
++  const TRIAGE_VERDICT = { likely_attack: ['Saldırı olası', 'bad'], likely_false_positive: ['Yanlış alarm olası', 'ok'], uncertain: ['Belirsiz', 'warn'] };
+   const INC_METHODS = { confirm: 'ids:confirm_incident', false_positive: 'ids:false_positive_incident', resolve: 'ids:resolve_incident' };
+   const METHODS = { approve: 'ids:approve_action', reject: 'ids:reject_action', rollback: 'ids:rollback_action' };
+   let client = null;
+@@ -1224,7 +1232,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+     $('incd-events').textContent = '…';
+     $('incd-span').textContent = '—';
+     $('incd-risk').textContent = '—';
+-    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body', 'incd-btns']) $(b).replaceChildren();
++    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body', 'incd-btns', 'incd-triage', 'incd-triage-head']) $(b).replaceChildren();
+     incidentMessage('Yükleniyor…');
+     const card = $('incd-card');
+     card.hidden = false;
+@@ -1293,6 +1301,26 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+     }
+   }
+ 
++  function renderTriage(t) {
++    const head = $('incd-triage-head');
++    const list = $('incd-triage');
++    if (!t || !Array.isArray(t.evidence)) { head.replaceChildren(); list.replaceChildren(); return; }
++    const score = Number(t.score) || 0;
++    const conf = Math.round(Math.max(0, Math.min(1, Number(t.confidence) || 0)) * 100);
++    head.replaceChildren(
++      chip(TRIAGE_VERDICT[t.verdict], t.verdict),
++      el('span', { cls: 'muted', text: `puan ${score > 0 ? '+' : ''}${score} · güven %${conf}` }),
++      ...(Array.isArray(t.tactics) && t.tactics.length ? [el('span', { cls: 'muted', text: 'Taktik: ' + t.tactics.join(', ') })] : []));
++    list.replaceChildren(...t.evidence.map((e) => {
++      const w = Number(e.weight) || 0;
++      const tone = w > 0 ? ['Saldırı yönünde', 'bad'] : w < 0 ? ['Yanlış alarm yönünde', 'ok'] : ['Bilgi', 'muted'];
++      return el('li', {},
++        el('span', { cls: 't w', text: w > 0 ? '+' + w : String(w) }),
++        chip(tone),
++        el('span', { cls: 'msg', text: String(e.text || '') }));
++    }));
++  }
++
+   function renderIncidentDetail() {
+     const d = incidentData;
+     if (!d || !incidentId) return;
+@@ -1305,6 +1333,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+     $('incd-span').textContent = `${fmtTime(inc.first_seen)} – ${fmtTime(inc.last_seen)}`;
+     $('incd-risk').textContent = Number(inc.max_risk).toFixed(2);
+     renderIncidentButtons();
++    renderTriage(d.triage);
+ 
+     $('incd-runs-empty').hidden = d.runs.length > 0;
+     $('incd-runs').replaceChildren(...d.runs.map((r) => {
+diff --git a/backend/core/tests_triage.py b/backend/core/tests_triage.py
+new file mode 100644
+index 0000000..bf08d84
+--- /dev/null
++++ b/backend/core/tests_triage.py
+@@ -0,0 +1,222 @@
++import json
++from datetime import timedelta
++
++from django.contrib.auth import get_user_model
++from django.test import TestCase
++from django.utils import timezone
++
++from . import incident_detail, triage
++from .models import Action, AuditLog, Event, Incident
++
++User = get_user_model()
++HOST = {"HTTP_HOST": "127.0.0.1:8000"}
++
++
++def make_incident(ip="203.0.113.7", status=Incident.Status.NEW, count=1, risk=0.7):
++    now = timezone.now()
++    return Incident.objects.create(
++        source_ip=ip, status=status, risk_level="medium", max_risk=risk, attack_type="x",
++        event_count=count, first_seen=now, last_seen=now,
++    )
++
++
++def make_event(inc, attack_type="brute_force", features=None, ago=0, risk=0.7):
++    event = Event.objects.create(
++        source_ip=inc.source_ip, attack_type=attack_type, risk_score=risk, risk_level="medium",
++        incident=inc, features=features or {},
++    )
++    Event.objects.filter(pk=event.pk).update(created_at=timezone.now() - timedelta(seconds=ago))
++    event.refresh_from_db()
++    return event
++
++
++def codes(result):
++    return {e["code"] for e in result["evidence"]}
++
++
++def run(inc, actions=None):
++    return triage.triage(inc, list(inc.events.all()), actions)
++
++
++class IdentityTests(TestCase):
++    def test_protected_ip_points_to_false_positive(self):
++        inc = make_incident("192.168.56.1")
++        make_event(inc)
++        out = run(inc)
++        self.assertIn("protected_ip", codes(out))
++        self.assertNotIn("internal_ip", codes(out))
++        self.assertEqual(out["verdict"], "likely_false_positive")
++
++    def test_private_range_is_internal_but_documentation_range_is_not(self):
++        internal = make_incident("172.20.4.9")
++        make_event(internal)
++        self.assertIn("internal_ip", codes(run(internal)))
++        doc = make_incident("203.0.113.9")
++        make_event(doc)
++        self.assertNotIn("internal_ip", codes(run(doc)))
++
++
++class HistoryTests(TestCase):
++    def test_prior_false_positive(self):
++        old = make_incident(status=Incident.Status.FALSE_POSITIVE)
++        inc = make_incident(status=Incident.Status.NEW)
++        # Aynı IP'de iki açık olamaz; eski olan kapalı.
++        old.closed_at = timezone.now()
++        old.save(update_fields=["closed_at"])
++        make_event(inc)
++        out = run(inc)
++        self.assertIn("prior_false_positive", codes(out))
++        weight = {e["code"]: e["weight"] for e in out["evidence"]}["prior_false_positive"]
++        self.assertLess(weight, 0)
++
++    def test_prior_confirmed_from_audit_log(self):
++        old = make_incident(status=Incident.Status.RESOLVED)
++        AuditLog.objects.create(actor="user:1", verb="confirm_incident", target=old.source_ip,
++                                outcome="confirmed", detail={"incident_id": old.pk})
++        inc = make_incident()
++        make_event(inc)
++        self.assertIn("prior_confirmed", codes(run(inc)))
++
++    def test_own_confirmation_is_not_history(self):
++        inc = make_incident(status=Incident.Status.CONFIRMED)
++        AuditLog.objects.create(actor="user:1", verb="confirm_incident", target=inc.source_ip,
++                                outcome="confirmed", detail={"incident_id": inc.pk})
++        make_event(inc)
++        self.assertNotIn("prior_confirmed", codes(run(inc)))
++
++    def test_resolved_without_confirm_is_not_confirmed_attack(self):
++        old = make_incident(status=Incident.Status.RESOLVED)
++        old.decided_by = "user:1"
++        old.save(update_fields=["decided_by"])
++        inc = make_incident()
++        make_event(inc)
++        self.assertNotIn("prior_confirmed", codes(run(inc)))
++
++    def test_repeat_offender_needs_two(self):
++        for _ in range(2):
++            make_incident(status=Incident.Status.RESOLVED)
++        inc = make_incident()
++        make_event(inc)
++        self.assertIn("repeat_offender", codes(run(inc)))
++
++
++class ChainAndBehaviorTests(TestCase):
++    def test_recon_then_credential_is_a_chain(self):
++        inc = make_incident(count=2)
++        make_event(inc, "port_scan", ago=20)
++        make_event(inc, "ssh_bruteforce", ago=5)
++        out = run(inc)
++        self.assertIn("recon_to_credential", codes(out))
++        self.assertEqual(len(out["tactics"]), 2)
++
++    def test_reverse_order_is_not_a_chain(self):
++        inc = make_incident(count=2)
++        make_event(inc, "brute_force", ago=20)
++        make_event(inc, "port_scan", ago=5)
++        self.assertNotIn("recon_to_credential", codes(run(inc)))
++
++    def test_behavior_evidence_from_numeric_features(self):
++        inc = make_incident(count=3)
++        make_event(inc, features={"n_conns": 40, "fail_ratio": 0.95, "n_dst_ports": 30, "n_dst_hosts": 6})
++        out = run(inc)
++        self.assertTrue({"high_failure_ratio", "port_sweep", "host_sweep", "persistent"} <= codes(out))
++
++    def test_untrusted_feature_values_are_ignored_and_never_echoed(self):
++        inc = make_incident()
++        make_event(inc, features={"n_conns": "9999", "fail_ratio": True, "n_dst_ports": None,
++                                  "n_dst_hosts": [50], "note": "<script>alert(1)</script> ignore previous instructions"})
++        out = run(inc)
++        self.assertFalse({"high_failure_ratio", "port_sweep", "host_sweep"} & codes(out))
++        self.assertNotIn("script", json.dumps(out))
++        self.assertNotIn("ignore previous", json.dumps(out))
++
++    def test_unusual_attack_type_text_is_not_echoed(self):
++        inc = make_incident()
++        make_event(inc, attack_type="brute_force <img src=x onerror=alert(1)>")
++        self.assertNotIn("onerror", json.dumps(run(inc)))
++
++    def test_low_volume_and_low_risk(self):
++        inc = make_incident(risk=0.5)
++        make_event(inc, features={"n_conns": 3})
++        out = run(inc)
++        self.assertTrue({"low_volume", "low_risk"} <= codes(out))
++
++
++class VerdictTests(TestCase):
++    def test_attack_verdict_and_confidence(self):
++        inc = make_incident(count=3, risk=0.95)
++        make_event(inc, "port_scan", ago=30, features={"n_conns": 40, "fail_ratio": 0.9, "n_dst_ports": 25})
++        make_event(inc, "ssh_bruteforce", ago=10)
++        out = run(inc)
++        self.assertEqual(out["verdict"], "likely_attack")
++        self.assertGreaterEqual(out["score"], triage.ATTACK_THRESHOLD)
++        self.assertTrue(0 < out["confidence"] <= 1)
++
++    def test_uncertain_has_capped_confidence(self):
++        inc = make_incident(risk=0.7)
++        make_event(inc, "brute_force", features={"n_conns": 20})
++        out = run(inc)
++        self.assertEqual(out["verdict"], "uncertain")
++        self.assertLessEqual(out["confidence"], 0.5)
++
++    def test_no_events_is_still_safe(self):
++        inc = make_incident()
++        out = triage.triage(inc, [], [])
++        self.assertIn(out["verdict"], {"uncertain", "likely_attack", "likely_false_positive"})
++        self.assertEqual(out["tactics"], [])
++
++
++class ImpactTests(TestCase):
++    def _block(self, inc, event, decided_ago):
++        return Action.objects.create(
++            event=event, kind=Action.Kind.BLOCK_IP, target=inc.source_ip, status=Action.Status.EXECUTED,
++            decided_at=timezone.now() - timedelta(seconds=decided_ago),
++        )
++
++    def test_activity_after_block(self):
++        inc = make_incident(count=2)
++        first = make_event(inc, ago=60)
++        make_event(inc, ago=5)
++        out = run(inc, [self._block(inc, first, 30)])
++        self.assertIn("activity_after_block", codes(out))
++
++    def test_quiet_after_block(self):
++        inc = make_incident()
++        first = make_event(inc, ago=60)
++        out = run(inc, [self._block(inc, first, 30)])
++        self.assertIn("quiet_after_block", codes(out))
++        self.assertNotIn("activity_after_block", codes(out))
++
++    def test_pending_block_has_no_impact_evidence(self):
++        inc = make_incident()
++        ev = make_event(inc)
++        pending = Action.objects.create(event=ev, kind=Action.Kind.BLOCK_IP, target=inc.source_ip,
++                                        status=Action.Status.PENDING_APPROVAL)
++        out = run(inc, [pending])
++        self.assertFalse({"activity_after_block", "quiet_after_block"} & codes(out))
++
++
++class DetailApiTests(TestCase):
++    def setUp(self):
++        self.staff = User.objects.create_user("ops", password="x", is_staff=True)
++        self.plain = User.objects.create_user("guest", password="x")
++
++    def test_build_incident_includes_triage(self):
++        inc = make_incident()
++        make_event(inc, features={"n_conns": 30, "fail_ratio": 0.9})
++        data = incident_detail.build_incident(str(inc.pk))
++        self.assertEqual(set(data["triage"]), {"verdict", "score", "confidence", "evidence", "tactics"})
++        for item in data["triage"]["evidence"]:
++            self.assertEqual(set(item), {"code", "weight", "text"})
++        self.assertNotIn("features", json.dumps(data))
++
++    def test_panel_endpoint_staff_only(self):
++        inc = make_incident()
++        make_event(inc)
++        url = f"/panel/api/incident/?id={inc.pk}"
++        self.client.force_login(self.plain)
++        self.assertEqual(self.client.get(url, **HOST).status_code, 403)
++        self.client.force_login(self.staff)
++        resp = self.client.get(url, **HOST)
++        self.assertEqual(resp.status_code, 200)
++        self.assertIn("triage", resp.json())
+diff --git a/backend/core/triage.py b/backend/core/triage.py
+new file mode 100644
+index 0000000..3ba41ca
+--- /dev/null
++++ b/backend/core/triage.py
+@@ -0,0 +1,195 @@
++"""Triage: bir incident için "bu gerçek mi?" sorusuna kanıt toplar.
++
++Kural tabanlı, deterministik ve yalnızca kendi verimizi kullanır (dış servis yok). Her kanıtın bir ağırlığı vardır:
++artı değer saldırı yönünde, eksi değer yanlış alarm yönünde, 0 yalnızca bilgidir. Toplam puan bir ÖNERİ üretir;
++karar yine insanındır (core.incidents.decide). Claude ajanı geldiğinde aynı kanıtı hazır alıp üstüne akıl yürütür.
++
++Güvenlik: Event.features ve attack_type saldırgan kontrolünde olabilir. Kanıt metinlerine bunlardan yalnızca sayıya
++çevrilmiş değerler ve bizim sabit etiketlerimiz girer; serbest metin hiçbir zaman çıktıya taşınmaz.
++"""
++
++import ipaddress
++
++from django.db.models import Count, Q
++
++from .models import Action, AuditLog, Incident
++from .protection import is_protected_ip
++
++# Kanıt ağırlıkları (artı: saldırı yönünde, eksi: yanlış alarm yönünde).
++W_PROTECTED = -3
++W_INTERNAL = -1
++W_PRIOR_FALSE_POSITIVE = -2
++W_PRIOR_CONFIRMED = 3
++W_REPEAT = 1
++W_CHAIN = 3
++W_FAIL_RATIO = 1
++W_PORT_SWEEP = 1
++W_HOST_SWEEP = 1
++W_PERSISTENT = 1
++W_LOW_VOLUME = -1
++W_HIGH_RISK = 1
++W_LOW_RISK = -1
++W_ACTIVITY_AFTER_BLOCK = 2
++
++ATTACK_THRESHOLD = 4
++FALSE_POSITIVE_THRESHOLD = -2
++
++# Yalnızca RFC1918 özel ağlar "iç ağ" sayılır. Python'un is_private'ı belgeleme aralıklarını (203.0.113.0/24) da
++# kapsadığı için kullanılmıyor.
++_INTERNAL_NETS = [ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")]
++
++# Sensörün saldırı türlerini ATT&CK taktiğine eşler (türün içinde geçen sabit anahtar sözcükle).
++_TACTICS = (
++    ("scan", "recon", "Keşif (T1046)"),
++    ("brute", "credential", "Kimlik bilgisi erişimi (T1110)"),
++    ("dos", "impact", "Etki (T1498)"),
++)
++
++
++def _is_internal(ip):
++    try:
++        addr = ipaddress.ip_address(str(ip))
++    except ValueError:
++        return False
++    return any(addr in net for net in _INTERNAL_NETS)
++
++
++def _num(value):
++    """features içinden yalnızca gerçek sayıları al (bool ve metin hariç)."""
++    if isinstance(value, bool) or not isinstance(value, (int, float)):
++        return None
++    if value != value or value in (float("inf"), float("-inf")):
++        return None
++    return value
++
++
++def _max_feature(events, name):
++    values = [_num((e.features or {}).get(name)) for e in events]
++    values = [v for v in values if v is not None]
++    return max(values) if values else None
++
++
++def _stage_order(events):
++    """Olayların taktik sırası (ilk görülme sırasına göre, tekrarsız)."""
++    seen = []
++    for event in sorted(events, key=lambda e: (e.created_at, e.pk)):
++        kind = str(event.attack_type or "").lower()
++        for key, code, label in _TACTICS:
++            if key in kind and code not in [c for c, _ in seen]:
++                seen.append((code, label))
++    return seen
++
++
++def _item(code, weight, text):
++    return {"code": code, "weight": weight, "text": text}
++
++
++def _history(incident):
++    """Aynı IP'nin bu incident dışındaki geçmişi."""
++    rows = (
++        Incident.objects.filter(source_ip=incident.source_ip)
++        .exclude(pk=incident.pk)
++        .aggregate(
++            total=Count("pk"),
++            false_positive=Count("pk", filter=Q(status=Incident.Status.FALSE_POSITIVE)),
++        )
++    )
++    # "Saldırıyı onayla" kararı denetim kaydında kalır; incident sonradan Çöz ile kapansa da saldırı sayılır.
++    rows["confirmed"] = (
++        AuditLog.objects.filter(verb="confirm_incident", target=incident.source_ip)
++        .exclude(detail__incident_id=incident.pk)
++        .count()
++    )
++    return rows
++
++
++def triage(incident, events, actions=None):
++    """`events`: incident'in olayları (en çok MAX_EVENTS), `actions`: ona bağlı eylemler."""
++    events = list(events)
++    actions = list(actions) if actions is not None else []
++    evidence = []
++
++    # 1) Kimlik: korumalı / iç ağ
++    if is_protected_ip(incident.source_ip):
++        evidence.append(_item("protected_ip", W_PROTECTED,
++                              "Kaynak korumalı listede (ağ geçidi, DNS, sensör gibi); büyük olasılıkla bizim altyapımız."))
++    elif _is_internal(incident.source_ip):
++        evidence.append(_item("internal_ip", W_INTERNAL,
++                              "Kaynak iç ağdan (özel adres). İç taramalar sık yanlış alarm olur, ama yanal hareket de olabilir."))
++
++    # 2) Geçmiş
++    hist = _history(incident)
++    if hist["false_positive"]:
++        evidence.append(_item("prior_false_positive", W_PRIOR_FALSE_POSITIVE,
++                              f"Bu IP daha önce {hist['false_positive']} kez yanlış alarm olarak kapatıldı."))
++    if hist["confirmed"]:
++        evidence.append(_item("prior_confirmed", W_PRIOR_CONFIRMED,
++                              f"Bu IP daha önce {hist['confirmed']} kez gerçek saldırı olarak onaylandı."))
++    other = max(0, hist["total"] - hist["false_positive"] - hist["confirmed"])
++    if other >= 2:
++        evidence.append(_item("repeat_offender", W_REPEAT,
++                              f"Bu IP daha önce {other} ayrı incident üretti (tekrarlayan kaynak)."))
++
++    # 3) Zincir (ATT&CK taktikleri)
++    stages = _stage_order(events)
++    tactics = [label for _, label in stages]
++    codes = [code for code, _ in stages]
++    if "recon" in codes and "credential" in codes and codes.index("recon") < codes.index("credential"):
++        evidence.append(_item("recon_to_credential", W_CHAIN,
++                              "Aynı IP önce keşif (tarama), sonra kimlik bilgisi denemesi yaptı: saldırı zinciri."))
++    elif tactics:
++        evidence.append(_item("tactics", 0, "Gözlenen taktik: " + ", ".join(tactics) + "."))
++
++    # 4) Davranış (yalnızca sayısal özelliklerden türetilen özet)
++    fail_ratio = _max_feature(events, "fail_ratio")
++    n_conns = _max_feature(events, "n_conns")
++    ports = _max_feature(events, "n_dst_ports")
++    hosts = _max_feature(events, "n_dst_hosts")
++    if fail_ratio is not None and fail_ratio >= 0.8 and (n_conns or 0) >= 10:
++        evidence.append(_item("high_failure_ratio", W_FAIL_RATIO,
++                              f"Bir pencerede bağlantıların %{round(fail_ratio * 100)}'i başarısız oldu (pencere başına en çok {int(n_conns)} bağlantı)."))
++    if ports is not None and ports >= 15:
++        evidence.append(_item("port_sweep", W_PORT_SWEEP, f"Tek pencerede {int(ports)} farklı porta dokundu."))
++    if hosts is not None and hosts >= 5:
++        evidence.append(_item("host_sweep", W_HOST_SWEEP, f"Tek pencerede {int(hosts)} farklı makineye dokundu."))
++    if incident.event_count >= 3:
++        evidence.append(_item("persistent", W_PERSISTENT,
++                              f"{incident.event_count} ayrı pencerede devam etti (ısrarlı)."))
++    elif incident.event_count == 1 and n_conns is not None and n_conns <= 5:
++        evidence.append(_item("low_volume", W_LOW_VOLUME,
++                              f"Tek pencere ve yalnızca {int(n_conns)} bağlantı: düşük hacim."))
++
++    # 5) Model riski
++    if incident.max_risk >= 0.85:
++        evidence.append(_item("high_risk", W_HIGH_RISK, f"En yüksek risk skoru yüksek ({incident.max_risk:.2f})."))
++    elif incident.max_risk <= 0.55:
++        evidence.append(_item("low_risk", W_LOW_RISK, f"En yüksek risk skoru düşük ({incident.max_risk:.2f})."))
++
++    # 6) Engel sonrası etki
++    blocks = [a for a in actions
++              if a.kind == Action.Kind.BLOCK_IP and a.decided_at
++              and a.status in (Action.Status.EXECUTED, Action.Status.ROLLED_BACK)]
++    if blocks:
++        applied = min(a.decided_at for a in blocks)
++        after = sum(1 for e in events if e.created_at > applied)
++        if after:
++            evidence.append(_item("activity_after_block", W_ACTIVITY_AFTER_BLOCK,
++                                  f"IP engellendikten sonra {after} yeni olay geldi: engel durdurmadı ya da başka yol var."))
++        else:
++            evidence.append(_item("quiet_after_block", 0, "IP engellendikten sonra yeni olay gelmedi."))
++
++    score = sum(item["weight"] for item in evidence)
++    if score >= ATTACK_THRESHOLD:
++        verdict = "likely_attack"
++    elif score <= FALSE_POSITIVE_THRESHOLD:
++        verdict = "likely_false_positive"
++    else:
++        verdict = "uncertain"
++    confidence = round(min(1.0, abs(score) / 8), 2) if verdict != "uncertain" else round(min(0.5, abs(score) / 8), 2)
++    return {
++        "verdict": verdict,
++        "score": score,
++        "confidence": confidence,
++        "evidence": evidence,
++        "tactics": tactics,
++    }

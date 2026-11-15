@@ -123,6 +123,23 @@ saldırı türü en yüksek riskli olaya göre tutulur.
   ajan incelemeleri (ajan, durum, not), olaylar ve eylemler. Liste ve açık kart `events:incidents` kanalından canlı güncellenir.
   Olayın ham `features` alanı hiçbir yanıtta yoktur; metinler yalnızca `textContent` ile basılır.
 
+### Triage (kanıt ve öneri)
+
+Incident ayrıntı kartında **Triage** bölümü, "bu gerçek mi?" sorusu için kanıt toplar (`core/triage.py`). Kural tabanlı ve
+deterministiktir, yalnızca kendi verimizi kullanır (dış servis yok); kart her açıldığında taze hesaplanır, saklanmaz.
+Her kanıtın bir ağırlığı vardır (artı: saldırı yönünde, eksi: yanlış alarm yönünde, 0: bilgi); toplam puan bir **öneri**
+üretir (Saldırı olası / Yanlış alarm olası / Belirsiz). Karar yine insanındır: öneri `decide`'ı tetiklemez.
+
+- Kimlik: korumalı IP (güçlü yanlış alarm işareti), RFC1918 iç ağ (zayıf).
+- Geçmiş: aynı IP daha önce yanlış alarm mı çıktı, "Saldırıyı onayla" dendi mi (denetim kaydından), tekrarlayan kaynak mı.
+- Zincir: önce keşif (tarama, T1046) sonra kimlik bilgisi denemesi (brute force, T1110) varsa saldırı zinciri.
+- Davranış: başarısız bağlantı oranı, farklı port/makine sayısı, ısrar, düşük hacim; yalnızca sayısal özelliklerden türetilir.
+- Model riski ve engel sonrası etki (IP engellendikten sonra yeni olay geldi mi).
+
+`Event.features` ve saldırı türü saldırgan kontrollü sayılır: çıktıya yalnızca sayıya çevrilmiş değerler ve sabit metinler girer,
+serbest metin hiçbir zaman taşınmaz. API: incident ayrıntı yanıtında `triage` alanı. Dış tehdit istihbaratı ve hedefin
+auth log'u (saldırı başarılı oldu mu) sonraki sürümlerde.
+
 ### Bildirim (e-posta)
 
 İnsan kararı bekleyen her **yeni** eylem için (aynı IP'ye tekrarlanan olaylar tek eylem, tek e-posta üretir) ve
@@ -160,7 +177,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 180 test (+3 atlanır), Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 201 test (+3 atlanır), Postgres gerekmez
 ```
 
 Eşzamanlı öneri ve incident yarışlarının testleri (`core/tests_concurrency.py`, 3 test) yalnızca PostgreSQL'de çalışır, sqlite'ta

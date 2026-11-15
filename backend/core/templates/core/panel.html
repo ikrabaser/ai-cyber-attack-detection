@@ -140,6 +140,10 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 #incd-title { outline: none; }
 .incd-btns { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
 .incd-btns:empty { display: none; }
+.tri-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 4px 14px 8px; }
+.tri-head:empty { display: none; }
+.tri-head .muted { color: var(--muted); font-size: 12px; }
+#incd-triage .w { font-variant-numeric: tabular-nums; font-weight: 600; }
 #source-title { outline: none; }
 .src-kpis { padding: 12px 12px 0; margin-bottom: 0; }
 .charts.one { grid-template-columns: 1fr; }
@@ -236,6 +240,9 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
       <div class="kpi"><div class="n" id="incd-risk">—</div><div class="l">En yüksek risk</div></div>
     </div>
     <div id="incd-btns" class="incd-btns" role="group" aria-label="Incident kararı"></div>
+    <h3 class="sub">Triage <span class="muted">kanıtlar ve öneri; karar senin</span></h3>
+    <div id="incd-triage-head" class="tri-head"></div>
+    <ul id="incd-triage" class="flow"></ul>
     <h3 class="sub">Ajan incelemeleri</h3>
     <ul id="incd-runs" class="flow"></ul>
     <div id="incd-runs-empty" class="empty" hidden>Henüz inceleme yok.</div>
@@ -568,6 +575,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
   }
 
   // ---- RPC (onay / red / geri alma) ----------------------------------------
+  const TRIAGE_VERDICT = { likely_attack: ['Saldırı olası', 'bad'], likely_false_positive: ['Yanlış alarm olası', 'ok'], uncertain: ['Belirsiz', 'warn'] };
   const INC_METHODS = { confirm: 'ids:confirm_incident', false_positive: 'ids:false_positive_incident', resolve: 'ids:resolve_incident' };
   const METHODS = { approve: 'ids:approve_action', reject: 'ids:reject_action', rollback: 'ids:rollback_action' };
   let client = null;
@@ -1224,7 +1232,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     $('incd-events').textContent = '…';
     $('incd-span').textContent = '—';
     $('incd-risk').textContent = '—';
-    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body', 'incd-btns']) $(b).replaceChildren();
+    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body', 'incd-btns', 'incd-triage', 'incd-triage-head']) $(b).replaceChildren();
     incidentMessage('Yükleniyor…');
     const card = $('incd-card');
     card.hidden = false;
@@ -1293,6 +1301,26 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     }
   }
 
+  function renderTriage(t) {
+    const head = $('incd-triage-head');
+    const list = $('incd-triage');
+    if (!t || !Array.isArray(t.evidence)) { head.replaceChildren(); list.replaceChildren(); return; }
+    const score = Number(t.score) || 0;
+    const conf = Math.round(Math.max(0, Math.min(1, Number(t.confidence) || 0)) * 100);
+    head.replaceChildren(
+      chip(TRIAGE_VERDICT[t.verdict], t.verdict),
+      el('span', { cls: 'muted', text: `puan ${score > 0 ? '+' : ''}${score} · güven %${conf}` }),
+      ...(Array.isArray(t.tactics) && t.tactics.length ? [el('span', { cls: 'muted', text: 'Taktik: ' + t.tactics.join(', ') })] : []));
+    list.replaceChildren(...t.evidence.map((e) => {
+      const w = Number(e.weight) || 0;
+      const tone = w > 0 ? ['Saldırı yönünde', 'bad'] : w < 0 ? ['Yanlış alarm yönünde', 'ok'] : ['Bilgi', 'muted'];
+      return el('li', {},
+        el('span', { cls: 't w', text: w > 0 ? '+' + w : String(w) }),
+        chip(tone),
+        el('span', { cls: 'msg', text: String(e.text || '') }));
+    }));
+  }
+
   function renderIncidentDetail() {
     const d = incidentData;
     if (!d || !incidentId) return;
@@ -1305,6 +1333,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     $('incd-span').textContent = `${fmtTime(inc.first_seen)} – ${fmtTime(inc.last_seen)}`;
     $('incd-risk').textContent = Number(inc.max_risk).toFixed(2);
     renderIncidentButtons();
+    renderTriage(d.triage);
 
     $('incd-runs-empty').hidden = d.runs.length > 0;
     $('incd-runs').replaceChildren(...d.runs.map((r) => {

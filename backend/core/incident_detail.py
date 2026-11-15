@@ -1,9 +1,10 @@
 """Tek bir incident'in ayrıntısı: panelin incident kartı için.
 
-Olayın `features` alanı (saldırgan kontrollü ham veri) hiçbir zaman dışarı çıkmaz.
+Olayın `features` alanı (saldırgan kontrollü ham veri) hiçbir zaman dışarı çıkmaz; triage yalnızca ondan türetilmiş
+sayıları ve sabit metinleri döndürür.
 """
 
-from . import realtime
+from . import realtime, triage
 from .models import Action, AnalysisRun, Incident
 from .protection import is_protected_ip
 
@@ -53,9 +54,9 @@ def build_incident(raw_id):
     except Incident.DoesNotExist:
         raise IncidentNotFound("incident bulunamadı")
 
-    events = incident.events.order_by("-created_at", "-id")[:MAX_EVENTS]
+    events = list(incident.events.order_by("-created_at", "-id")[:MAX_EVENTS])
     runs = AnalysisRun.objects.filter(incident=incident).order_by("-started_at", "-id")[:MAX_RUNS]
-    actions = Action.objects.filter(event__incident=incident).order_by("-id")[:MAX_ACTIONS]
+    actions = list(Action.objects.filter(event__incident=incident).order_by("-id")[:MAX_ACTIONS])
 
     return {
         "incident": realtime.incident_payload(incident),
@@ -65,4 +66,5 @@ def build_incident(raw_id):
         "events_truncated": incident.event_count > MAX_EVENTS,
         "runs": [_run_item(r) for r in runs],
         "actions": [_action_item(a) for a in actions],
+        "triage": triage.triage(incident, events, actions),
     }
