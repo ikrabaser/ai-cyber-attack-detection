@@ -167,7 +167,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 <div id="toasts" aria-live="polite"></div>
 
 {{ config|json_script:"panel-config" }}
-<script nonce="{{ csp_nonce }}" src="{{ centrifuge_src }}" integrity="{{ centrifuge_sri }}" crossorigin="anonymous"></script>
+<script nonce="{{ csp_nonce }}" src="{{ centrifuge_src }}" integrity="{{ centrifuge_sri }}"></script>
 <script nonce="{{ csp_nonce }}" id="panel-js">
 {% verbatim %}
 (() => {
@@ -423,7 +423,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     loadSnapshot();
     if (typeof Centrifuge === 'undefined') {
       setConn('bad', 'Canlı bağlantı yok');
-      banner([document.createTextNode('Centrifuge istemcisi yüklenemedi (ağ veya bütünlük kontrolü). Liste yüklendiğinde görünür ama canlı güncelleme ve butonlar çalışmaz.')]);
+      banner([document.createTextNode('Centrifuge istemcisi yüklenemedi (dosya veya bütünlük kontrolü). Liste yüklendiğinde görünür ama canlı güncelleme ve butonlar çalışmaz.')]);
       return;
     }
     client = new Centrifuge(cfg.wsUrl);

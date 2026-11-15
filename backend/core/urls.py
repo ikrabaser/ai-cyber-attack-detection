@@ -6,6 +6,7 @@ urlpatterns = [
     path("healthz/", views.healthz),
     path("panel/", views_panel.panel),
     path("panel/api/snapshot/", views_panel.snapshot),
+    path(views_panel.CENTRIFUGE_URL.lstrip("/"), views_panel.centrifuge_js),
     path("api/events/", views.ingest),
     path("centrifugo/connect/", views_centrifugo.connect),
     path("centrifugo/refresh/", views_centrifugo.refresh),

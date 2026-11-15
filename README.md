@@ -75,8 +75,9 @@ Tek sayfa, Django'dan servis edilir. Açılınca son olaylar/eylemler yüklenir,
   yine doğrulanmış `is_staff` oturumundan ve `core.actions` politika katmanından geçer.
 - Olay alanları saldırgan kontrolünde olabileceği için yalnızca `textContent` ile basılır; sayfa
   nonce'lu sıkı bir CSP ile gelir (dış bağlantı yalnızca Centrifugo).
-- İstemci kütüphanesi (`centrifuge-js 5.7.4`) CDN'den, sürüm ve bütünlük (SRI) hash'i sabitlenmiş
-  olarak yüklenir; internet gerekir. Yüklenemezse panel bunu bir uyarıyla bildirir.
+- İstemci kütüphanesi (`centrifuge-js 5.7.4`) depodaki `backend/core/vendor/` altından, kendi sunucundan
+  gelir (CDN yok, internet gerekmez, CSP'de dış script kaynağı yok). Bütünlük (SRI) hash'i tarayıcıda
+  kontrol edilir; yüklenemezse panel bunu bir uyarıyla bildirir.
 - İsteğe bağlı ortam değişkenleri: `RT_SESSION_TTL_SECONDS` (varsayılan 300; oturum iptalinin
   bağlantıyı kapatma süresi), `RT_PUBLIC_PORT` (8001), `RT_WS_URL` (boşsa sayfanın ana makine adından türetilir).
 
@@ -97,7 +98,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 60 test, Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 61 test, Postgres gerekmez
 ```
 
 ## Doğrulananlar ve doğrulanmayanlar
@@ -109,10 +110,7 @@ saldırgan kontrollü metinlerin (HTML/script) etkisiz kalması.
 
 Henüz denenmeyenler:
 
-1. **Panelin CDN betiği:** `centrifuge-js` SRI hash'i npm paketinden hesaplandı, CDN'e test ortamından
-   erişilemedi. Panelde "Centrifuge istemcisi yüklenemedi" uyarısı çıkarsa nedeni budur (internet
-   veya hash).
-2. **Gerçek ağ trafiği:** olaylar şimdilik `emit_test_event` ile üretiliyor; sensör, modeller ve
+1. **Gerçek ağ trafiği:** olaylar şimdilik `emit_test_event` ile üretiliyor; sensör, modeller ve
    gerçek güvenlik duvarı arka ucu yok.
 
 ## Sonraki adımlar

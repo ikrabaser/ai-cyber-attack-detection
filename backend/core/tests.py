@@ -432,9 +432,26 @@ class PanelTests(TestCase):
         self.assertNotIn("unsafe-eval", csp)
         self.assertIn("img-src data:", csp)
         self.assertIn("connect-src 'self' ws://127.0.0.1:8001", csp)
-        self.assertIn("centrifuge@5.7.4", body)
+        self.assertIn("/panel/vendor/centrifuge-5.7.4.js", body)
         self.assertIn('integrity="sha384-', body)
         self.assertEqual(resp["Cache-Control"], "no-store")
+        # Dış script kaynağı yok: yalnızca nonce'lu scriptler çalışır, CDN'e bağlantı gerekmez.
+        self.assertIn(f"script-src 'nonce-{nonce}';", csp)
+        self.assertNotIn("http", csp.split("script-src")[1].split(";")[0])
+        self.assertNotIn("cdn.", body)
+
+    def test_vendored_centrifuge_matches_sri_and_is_served(self):
+        import base64
+        import hashlib
+
+        from core import views_panel
+
+        resp = self.client.get(views_panel.CENTRIFUGE_URL)  # oturumsuz da erişilebilir
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp["Content-Type"].startswith("text/javascript"))
+        digest = base64.b64encode(hashlib.sha384(resp.content).digest()).decode()
+        self.assertEqual(f"sha384-{digest}", views_panel.CENTRIFUGE_SRI)
+        self.assertIn(b"Centrifuge", resp.content)
 
     def test_ws_url_follows_page_host_so_cookie_reaches_centrifugo(self):
         self.client.force_login(self.staff)

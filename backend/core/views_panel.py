@@ -11,12 +11,13 @@ olabilir. Şablon bunları yalnızca `textContent` ile basar; ayrıca sıkı bir
 """
 
 import secrets
-from functools import wraps
+from functools import lru_cache, wraps
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
@@ -26,8 +27,12 @@ from .models import Action, Event
 SNAPSHOT_EVENTS = 50
 SNAPSHOT_ACTIONS = 100
 
-# Sürüm sabitli ve bütünlük (SRI) hash'li: CDN değişse bile farklı bir dosya çalışmaz.
-CENTRIFUGE_SRC = "https://cdn.jsdelivr.net/npm/centrifuge@5.7.4/dist/centrifuge.js"
+# İstemci kütüphanesi dış CDN'den değil, depodaki dosyadan (core/vendor/) sunulur: panel internetsiz
+# de çalışır, CSP'de dış script kaynağı gerekmez. Dosya npm paketinin `dist/centrifuge.js`'idir;
+# SRI hash'i bozulmaya karşı tarayıcıda da kontrol edilir (testler hash'i dosyayla karşılaştırır).
+CENTRIFUGE_VERSION = "5.7.4"
+CENTRIFUGE_FILE = Path(__file__).resolve().parent / "vendor" / f"centrifuge-{CENTRIFUGE_VERSION}.js"
+CENTRIFUGE_URL = f"/panel/vendor/centrifuge-{CENTRIFUGE_VERSION}.js"
 CENTRIFUGE_SRI = "sha384-Iz2tPn0Bdkrz7y4HN3TY1XBlxpW+TjRqSbTJc2ENckVFOGn9tDUNezcC3CF5pO+h"
 
 MODE_LABELS = {
@@ -73,7 +78,7 @@ def _csp(nonce, ws_url):
     return "; ".join(
         [
             "default-src 'none'",
-            f"script-src 'nonce-{nonce}' https://cdn.jsdelivr.net",
+            f"script-src 'nonce-{nonce}'",
             f"style-src 'nonce-{nonce}'",
             f"connect-src 'self' {ws_origin}",
             "img-src data:",  # boş favicon (data:,) için
@@ -84,6 +89,23 @@ def _csp(nonce, ws_url):
     )
 
 
+@lru_cache(maxsize=1)
+def _centrifuge_bytes():
+    return CENTRIFUGE_FILE.read_bytes()
+
+
+@require_GET
+def centrifuge_js(request):
+    """Vendored centrifuge-js. Herkese açık bir kütüphane dosyası; panel verisi içermez."""
+    try:
+        body = _centrifuge_bytes()
+    except OSError:
+        raise Http404("centrifuge-js dosyası bulunamadı")
+    response = HttpResponse(body, content_type="text/javascript; charset=utf-8")
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
+
+
 @require_GET
 @staff_member_required
 def panel(request):
@@ -92,7 +114,7 @@ def panel(request):
     mode = settings.AUTO_REMEDIATION_MODE
     context = {
         "csp_nonce": nonce,
-        "centrifuge_src": CENTRIFUGE_SRC,
+        "centrifuge_src": CENTRIFUGE_URL,
         "centrifuge_sri": CENTRIFUGE_SRI,
         "mode": mode,
         "mode_label": MODE_LABELS.get(mode, mode),
