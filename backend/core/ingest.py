@@ -6,7 +6,7 @@ import logging
 from django.conf import settings
 from django.db import transaction
 
-from . import audit, realtime
+from . import audit, incidents, realtime
 from .models import Event
 
 log = logging.getLogger(__name__)
@@ -91,6 +91,7 @@ def ingest_event(payload):
         )
         audit.record("sensor", "ingest_event", event.source_ip, "created",
                      event_id=event.pk, risk_score=risk, risk_level=event.risk_level)
+        incidents.attach_event(event)
         data = realtime.event_payload(event)
         transaction.on_commit(lambda: realtime.publish(realtime.CHANNEL_FEED, data))
         transaction.on_commit(lambda: enqueue_investigation(event))

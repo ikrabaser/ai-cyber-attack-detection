@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Action, AuditLog, Event
+from .models import Action, AnalysisRun, AuditLog, Event, Incident
 
 
 @admin.register(Event)
@@ -36,6 +36,34 @@ class AuditLogAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Incident)
+class IncidentAdmin(admin.ModelAdmin):
+    list_display = ("id", "source_ip", "status", "attack_type", "risk_level", "event_count", "first_seen", "last_seen")
+    list_filter = ("status", "risk_level", "attack_type")
+    search_fields = ("source_ip",)
+    # Durum değişiklikleri yalnızca core.incidents üzerinden yapılır.
+    readonly_fields = [f.name for f in Incident._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AnalysisRun)
+class AnalysisRunAdmin(admin.ModelAdmin):
+    list_display = ("id", "started_at", "agent", "status", "incident", "event")
+    list_filter = ("status", "agent")
+    readonly_fields = [f.name for f in AnalysisRun._meta.fields]
+
+    def has_add_permission(self, request):
         return False
 
     def has_delete_permission(self, request, obj=None):

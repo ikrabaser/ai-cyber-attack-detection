@@ -37,12 +37,88 @@ class Event(models.Model):
     # olabilir. Agent'a talimat olarak değil, veri olarak verilmelidir.
     features = models.JSONField(default=dict, blank=True)
     summary = models.TextField(blank=True)
+    incident = models.ForeignKey(
+        "Incident", null=True, blank=True, on_delete=models.SET_NULL, related_name="events"
+    )
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"#{self.pk} {self.attack_type} {self.source_ip} ({self.risk_level})"
+
+
+class Incident(models.Model):
+    """Aynı kaynak IP'nin ardışık olaylarını toplayan soruşturma kaydı.
+
+    Sensör her pencerede yeni olay üretir; incident bunları tek bir saldırı olarak gösterir.
+    IP başına en fazla bir açık incident vardır (veritabanı kısıtı).
+    """
+
+    class Status(models.TextChoices):
+        NEW = "new", "Yeni"
+        INVESTIGATING = "investigating", "İnceleniyor"
+        CONFIRMED = "confirmed", "Onaylandı"
+        FALSE_POSITIVE = "false_positive", "Yanlış alarm"
+        RESOLVED = "resolved", "Çözüldü"
+
+    OPEN_STATUSES = (Status.NEW, Status.INVESTIGATING, Status.CONFIRMED)
+
+    source_ip = models.GenericIPAddressField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.NEW, db_index=True)
+    # En yüksek riskli olaya göre: düzey, skor ve saldırı türü.
+    risk_level = models.CharField(max_length=8, choices=Event.Level.choices)
+    max_risk = models.FloatField()
+    attack_type = models.CharField(max_length=64, default="unknown")
+    event_count = models.PositiveIntegerField(default=0)
+    first_seen = models.DateTimeField()
+    last_seen = models.DateTimeField(db_index=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    decided_by = models.CharField(max_length=64, blank=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    # Ajanın en son özeti (AnalysisRun'dan kopya; listede göstermek için).
+    summary = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-last_seen", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_ip"],
+                condition=models.Q(status__in=["new", "investigating", "confirmed"]),
+                name="one_open_incident_per_ip",
+            )
+        ]
+
+    def __str__(self):
+        return f"incident #{self.pk} {self.source_ip} [{self.status}]"
+
+
+class AnalysisRun(models.Model):
+    """Ajanın bir incident (ve olay) üzerindeki tek bir inceleme çalışması."""
+
+    class Status(models.TextChoices):
+        RUNNING = "running", "Çalışıyor"
+        OK = "ok", "Tamamlandı"
+        FAILED = "failed", "Başarısız"
+
+    incident = models.ForeignKey(
+        Incident, null=True, blank=True, on_delete=models.CASCADE, related_name="analysis_runs"
+    )
+    event = models.ForeignKey(
+        Event, null=True, blank=True, on_delete=models.SET_NULL, related_name="analysis_runs"
+    )
+    agent = models.CharField(max_length=64)
+    status = models.CharField(max_length=8, choices=Status.choices, default=Status.RUNNING)
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    summary = models.TextField(blank=True)
+    detail = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-started_at", "-id"]
+
+    def __str__(self):
+        return f"run #{self.pk} {self.agent} [{self.status}]"
 
 
 class Action(models.Model):

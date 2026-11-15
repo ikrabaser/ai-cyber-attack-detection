@@ -344,6 +344,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     ingest: ['Sensör', 'info'], enqueue: ['Kuyruk', 'muted'], investigate: ['Agent', 'info'],
     propose: ['Politika', 'warn'], execute: ['Eylem', 'ok'], send: ['Bildirim', 'muted'],
     reject: ['Karar', 'muted'], rollback: ['Karar', 'info'], expire: ['Sistem', 'muted'],
+    open: ['Incident', 'info'], close: ['Incident', 'muted'],
   };
   const STEP_TONE = {
     created: 'ok', done: 'ok', sent: 'ok', executed: 'ok', rolled_back: 'ok', proposed: 'warn',
@@ -358,7 +359,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     const i = verb.indexOf('_');
     if (i < 0) return [verb, ''];
     const head = verb.slice(0, i), rest = verb.slice(i + 1);
-    if (head === 'send' || head === 'ingest' || head === 'enqueue' || head === 'investigate') return [head, rest];
+    if (['send', 'ingest', 'enqueue', 'investigate', 'open', 'close'].includes(head)) return [head, rest];
     return KIND_IDS.includes(rest) ? [head, rest] : [verb, ''];
   }
   function stepText(st) {
@@ -368,7 +369,9 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     const T = {
       ingest: { created: 'Sensörden olay alındı' },
       enqueue: { skipped: 'İnceleme kuyruğa alınmadı (aynı IP için görev zaten bekliyor)' },
-      investigate: { done: 'Agent incelemeyi tamamladı' },
+      investigate: { done: 'Agent incelemeyi tamamladı', failed: 'Agent incelemesi başarısız' },
+      open: { created: 'Incident açıldı' },
+      close: { resolved: 'Incident kapandı (uzun süredir olay yok)', false_positive: 'Incident yanlış alarm olarak kapandı' },
       propose: {
         proposed: `${kind} önerildi`, refused: `${kind} önerisi korumalı hedef nedeniyle reddedildi`,
         deduplicated: `${kind} zaten var, tekrar açılmadı`,
@@ -1111,7 +1114,8 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
       } else if (st.target) {
         msg.append(document.createTextNode(' · '), el('span', { cls: 'mono', text: st.target }));
       }
-      if (typeof st.event_id === 'number') msg.append(document.createTextNode(' '), el('span', { cls: 'muted', text: '(olay #' + st.event_id + ')' }));
+      if (typeof st.incident_id === 'number') msg.append(document.createTextNode(' '), el('span', { cls: 'muted', text: '(incident #' + st.incident_id + ')' }));
+      else if (typeof st.event_id === 'number') msg.append(document.createTextNode(' '), el('span', { cls: 'muted', text: '(olay #' + st.event_id + ')' }));
       const chipEl = el('span', { cls: 'chip ' + tone, text: stage[0] });
       const li = el('li', { cls: fresh.has(st.id) ? 'fresh' : '' }, el('span', { cls: 't mono', text: fmtTime(st.created_at) }), chipEl, msg);
       if (typeof st.note === 'string' && st.note) li.append(el('span', { cls: 'note', text: st.note }));

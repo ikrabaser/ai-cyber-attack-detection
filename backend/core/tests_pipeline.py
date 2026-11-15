@@ -45,7 +45,7 @@ class PipelinePublishTests(TestCase):
                          error="Traceback: parola=hunter2", reason="gizli", features={"a": 1}, recipients=3)
         (step,) = pipeline_calls(pub)
         self.assertEqual(set(step), {"type", "id", "created_at", "actor", "verb", "target", "outcome",
-                                     "event_id", "action_id"})
+                                     "event_id", "action_id", "incident_id"})
         self.assertEqual(step["actor"], "user")  # kullanıcı numarası yayınlanmaz
         self.assertNotIn("hunter2", json.dumps(step))
 

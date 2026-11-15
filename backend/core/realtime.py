@@ -52,6 +52,7 @@ def event_payload(event):
         "risk_level": event.risk_level,
         "status": event.status,
         "summary": event.summary[:500],
+        "incident_id": event.incident_id,
     }
 
 
@@ -93,6 +94,7 @@ def pipeline_payload(entry):
         "outcome": entry.outcome[:32],
         "event_id": _int_or_none(detail.get("event_id")),
         "action_id": _int_or_none(detail.get("action_id")),
+        "incident_id": _int_or_none(detail.get("incident_id")),
     }
     note = detail.get("note")
     if entry.verb == "investigate_event" and isinstance(note, str):

@@ -132,6 +132,13 @@ RISK_HIGH_THRESHOLD = float(env("RISK_HIGH_THRESHOLD", "0.9"))
 if not (0 <= RISK_LOW_THRESHOLD <= RISK_MEDIUM_THRESHOLD <= RISK_HIGH_THRESHOLD <= 1):
     raise ImproperlyConfigured("Risk eşikleri 0 <= düşük <= orta <= yüksek <= 1 olmalı.")
 
+# --- Incident (olay yönetimi) ---------------------------------------------
+
+# Aynı IP'den bu kadar süre olay gelmezse açık incident otomatik kapanır (çözüldü).
+INCIDENT_IDLE_SECONDS = int(env("INCIDENT_IDLE_SECONDS", "900"))
+if INCIDENT_IDLE_SECONDS < 60:
+    raise ImproperlyConfigured("INCIDENT_IDLE_SECONDS en az 60 olmalı.")
+
 # --- Müdahale politikası --------------------------------------------------
 
 PROTECTED_IPS = env_list("PROTECTED_IPS", "")

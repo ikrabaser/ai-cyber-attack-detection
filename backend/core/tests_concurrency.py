@@ -72,3 +72,37 @@ class ConcurrentProposalTests(TransactionTestCase):
             first = actions.propose_action(a, Action.Kind.BLOCK_IP, "203.0.113.10")
             second = actions.propose_action(b, Action.Kind.BLOCK_IP, "203.0.113.11")
         self.assertNotEqual(first.pk, second.pk)
+
+
+@skipUnless(connection.vendor == "postgresql", "kilit yalnızca PostgreSQL'de çalışır")
+class ConcurrentIncidentTests(TransactionTestCase):
+    """Aynı IP'den aynı anda gelen olaylar tek incident'e toplanmalı."""
+
+    def test_parallel_ingests_for_same_ip_share_one_incident(self):
+        from core.ingest import ingest_event
+        from core.models import Incident
+
+        barrier = threading.Barrier(THREADS)
+        errors = []
+
+        def worker():
+            try:
+                barrier.wait()
+                ingest_event({"source_ip": "203.0.113.7", "risk_score": 0.9, "attack_type": "brute_force"})
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+            finally:
+                connections.close_all()
+
+        with mock.patch("core.ingest.enqueue_investigation"), mock.patch("core.realtime.publish"):
+            threads = [threading.Thread(target=worker) for _ in range(THREADS)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=60)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(Incident.objects.count(), 1)
+        incident = Incident.objects.get()
+        self.assertEqual(incident.event_count, THREADS)
+        self.assertEqual(Event.objects.filter(incident=incident).count(), THREADS)
