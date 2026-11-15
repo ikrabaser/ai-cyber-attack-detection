@@ -21,12 +21,13 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
-from . import event_filters, realtime, source_detail, stats
-from .models import Action, AuditLog, Event
+from . import event_filters, incident_detail, realtime, source_detail, stats
+from .models import Action, AuditLog, Event, Incident
 
 SNAPSHOT_EVENTS = 50
 SNAPSHOT_ACTIONS = 100
 SNAPSHOT_STEPS = 40
+SNAPSHOT_INCIDENTS = 50
 
 # İstemci kütüphanesi dış CDN'den değil, depodaki dosyadan (core/vendor/) sunulur: panel internetsiz
 # de çalışır, CSP'de dış script kaynağı gerekmez. Dosya npm paketinin `dist/centrifuge.js`'idir;
@@ -143,7 +144,13 @@ def panel(request):
             "statsUrl": "/panel/api/stats/",
             "eventsUrl": "/panel/api/events/",
             "sourceUrl": "/panel/api/source/",
-            "channels": [realtime.CHANNEL_FEED, realtime.CHANNEL_ACTIONS, realtime.CHANNEL_PIPELINE],
+            "incidentUrl": "/panel/api/incident/",
+            "channels": [
+                realtime.CHANNEL_FEED,
+                realtime.CHANNEL_ACTIONS,
+                realtime.CHANNEL_PIPELINE,
+                realtime.CHANNEL_INCIDENTS,
+            ],
         },
     }
     response = render(request, "core/panel.html", context)
@@ -158,11 +165,13 @@ def snapshot(request):
     events = Event.objects.order_by("-id")[:SNAPSHOT_EVENTS]
     actions = Action.objects.order_by("-id")[:SNAPSHOT_ACTIONS]
     steps = AuditLog.objects.order_by("-id")[:SNAPSHOT_STEPS]
+    incident_rows = Incident.objects.order_by("-last_seen", "-id")[:SNAPSHOT_INCIDENTS]
     response = JsonResponse(
         {
             "events": [realtime.event_payload(e) for e in events],
             "actions": [realtime.action_payload(a) for a in actions],
             "steps": [realtime.pipeline_payload(s) for s in steps],
+            "incidents": [realtime.incident_payload(i) for i in incident_rows],
         }
     )
     response["Cache-Control"] = "no-store"
@@ -210,6 +219,21 @@ def source_view(request):
         data = source_detail.build_source(request.GET.get("ip"))
     except source_detail.SourceError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
+    response = JsonResponse(data)
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@require_GET
+@_staff_json
+def incident_view(request):
+    """Tek incident: olaylar, ajan çalışmaları ve eylemler. Ham `features` dönmez."""
+    try:
+        data = incident_detail.build_incident(request.GET.get("id"))
+    except incident_detail.IncidentError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    except incident_detail.IncidentNotFound as exc:
+        return JsonResponse({"error": str(exc)}, status=404)
     response = JsonResponse(data)
     response["Cache-Control"] = "no-store"
     return response

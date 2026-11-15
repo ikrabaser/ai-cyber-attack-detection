@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 CHANNEL_FEED = "events:feed"
 CHANNEL_ACTIONS = "events:actions"
 CHANNEL_PIPELINE = "events:pipeline"
+CHANNEL_INCIDENTS = "events:incidents"
 
 NOTE_MAX = 300
 
@@ -100,3 +101,21 @@ def pipeline_payload(entry):
     if entry.verb == "investigate_event" and isinstance(note, str):
         payload["note"] = note[:NOTE_MAX]
     return payload
+
+
+def incident_payload(incident):
+    """Panelin incident satırı. Ham özellik yok; özet kısaltılır."""
+    return {
+        "type": "incident",
+        "id": incident.pk,
+        "source_ip": incident.source_ip,
+        "status": incident.status,
+        "risk_level": incident.risk_level,
+        "max_risk": incident.max_risk,
+        "attack_type": incident.attack_type,
+        "event_count": incident.event_count,
+        "first_seen": incident.first_seen.isoformat(),
+        "last_seen": incident.last_seen.isoformat(),
+        "closed_at": incident.closed_at.isoformat() if incident.closed_at else None,
+        "summary": incident.summary[:300],
+    }

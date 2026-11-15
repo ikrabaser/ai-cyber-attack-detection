@@ -13,9 +13,11 @@ def _start_run(event, agent):
         name = type(agent).__name__
     run = AnalysisRun.objects.create(incident_id=event.incident_id, event=event, agent=name[:64])
     if event.incident_id:
-        Incident.objects.filter(pk=event.incident_id, status=Incident.Status.NEW).update(
+        moved = Incident.objects.filter(pk=event.incident_id, status=Incident.Status.NEW).update(
             status=Incident.Status.INVESTIGATING
         )
+        if moved:
+            incidents.publish_state(event.incident_id)
     return run
 
 
@@ -46,6 +48,7 @@ def investigate_event(event_id):
     run.save(update_fields=["status", "finished_at", "summary"])
     if event.incident_id:
         Incident.objects.filter(pk=event.incident_id).update(summary=event.summary)
+        incidents.publish_state(event.incident_id)
     audit.record("worker", "investigate_event", event.source_ip, "done",
                  event_id=event.pk, incident_id=event.incident_id, note=event.summary[:300])
     realtime.publish(realtime.CHANNEL_FEED, realtime.event_payload(event))

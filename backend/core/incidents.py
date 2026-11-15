@@ -10,7 +10,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from . import audit
+from . import audit, realtime
 from .models import Incident
 
 OPEN = [s.value for s in Incident.OPEN_STATUSES]
@@ -19,6 +19,18 @@ MAX_TRIES = 3
 
 def _locked_open(ip):
     return Incident.objects.select_for_update().filter(source_ip=ip, status__in=OPEN).first()
+
+
+def _publish_after_commit(incident):
+    payload = realtime.incident_payload(incident)
+    transaction.on_commit(lambda: realtime.publish(realtime.CHANNEL_INCIDENTS, payload))
+
+
+def publish_state(incident_id):
+    """Durumu/özeti dışarıdan (update ile) değişen incident'i panele yeniden yayınla."""
+    incident = Incident.objects.filter(pk=incident_id).first()
+    if incident is not None:
+        _publish_after_commit(incident)
 
 
 def _idle():
@@ -32,6 +44,7 @@ def _close(incident, actor, now, status=Incident.Status.RESOLVED):
     incident.decided_at = now
     incident.save(update_fields=["status", "closed_at", "decided_by", "decided_at"])
     audit.record(actor, "close_incident", incident.source_ip, status, incident_id=incident.pk)
+    _publish_after_commit(incident)
 
 
 def _absorb(incident, event):
@@ -85,6 +98,7 @@ def attach_event(event):
         raise RuntimeError(f"{event.source_ip} için incident bağlanamadı")
     event.incident = incident
     event.save(update_fields=["incident"])
+    _publish_after_commit(incident)
     return incident
 
 

@@ -114,6 +114,10 @@ saldırı türü en yüksek riskli olaya göre tutulur.
 - Ajanın her incelemesi `AnalysisRun` olarak kaydedilir (ajan adı, durum, özet, süre). Hata metni kayda yazılmaz, yalnızca hata türü.
 - Eylemler (`Action`) olay üzerinden incident'e bağlanır. Eski olaylar incident'siz kalır, hiçbir şey bozulmaz.
 - Canlı akışta "Incident açıldı / kapandı" adımları görünür. Admin'de Incident ve AnalysisRun salt okunur listelenir.
+- **Panelde Incident'ler kartı:** açık incident'ler (Açık / Tümü anahtarı); kaynak IP'ye tıklayınca kaynak zaman çizelgesi,
+  "Ayrıntı" ile incident kartı açılır (`GET /panel/api/incident/?id=`): durum, olay sayısı, ilk/son görülme, en yüksek risk,
+  ajan incelemeleri (ajan, durum, not), olaylar ve eylemler. Liste ve açık kart `events:incidents` kanalından canlı güncellenir.
+  Olayın ham `features` alanı hiçbir yanıtta yoktur; metinler yalnızca `textContent` ile basılır.
 
 ### Bildirim (e-posta)
 
@@ -152,7 +156,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 145 test (+3 atlanır), Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 163 test (+3 atlanır), Postgres gerekmez
 ```
 
 Eşzamanlı öneri ve incident yarışlarının testleri (`core/tests_concurrency.py`, 3 test) yalnızca PostgreSQL'de çalışır, sqlite'ta

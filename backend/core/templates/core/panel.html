@@ -136,7 +136,8 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 }
 .linkbtn:hover { text-decoration: underline; }
 .linkbtn:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 2px; }
-#source-card[hidden] { display: none; }
+#source-card[hidden], #incd-card[hidden] { display: none; }
+#incd-title { outline: none; }
 #source-title { outline: none; }
 .src-kpis { padding: 12px 12px 0; margin-bottom: 0; }
 .charts.one { grid-template-columns: 1fr; }
@@ -201,6 +202,55 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     </h2>
     <ul id="flow-list" class="flow" aria-live="off"></ul>
     <div id="flow-empty" class="empty" hidden>Henüz adım yok. Sensör bir olay gönderdiğinde akış burada belirir.</div>
+  </section>
+
+  <section class="card" id="inc-card" aria-labelledby="inc-title">
+    <h2>
+      <span id="inc-title">Incident'ler <small id="inc-sub">aynı kaynağın olayları tek saldırı olarak</small></span>
+      <span class="seg" role="group" aria-label="Incident listesi">
+        <button type="button" class="btn small active" id="inc-open" aria-pressed="true">Açık</button>
+        <button type="button" class="btn small" id="inc-all" aria-pressed="false">Tümü</button>
+      </span>
+    </h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Kaynak</th><th>Saldırı türü</th><th>Düzey</th><th>Olay</th><th>Son görülme</th><th>Durum</th><th></th></tr></thead>
+        <tbody id="inc-body"></tbody>
+      </table>
+    </div>
+    <div id="inc-empty" class="empty" hidden>Henüz incident yok.</div>
+  </section>
+
+  <section class="card" id="incd-card" aria-labelledby="incd-title" hidden>
+    <h2>
+      <span><span id="incd-title" tabindex="-1">Incident</span> <small id="incd-flags"></small></span>
+      <button type="button" class="btn small" id="incd-close">Kapat</button>
+    </h2>
+    <div id="incd-msg" class="empty" role="status" hidden></div>
+    <div class="kpis src-kpis">
+      <div class="kpi"><div class="n" id="incd-status">—</div><div class="l">Durum</div></div>
+      <div class="kpi"><div class="n" id="incd-events">0</div><div class="l">Olay</div></div>
+      <div class="kpi"><div class="n" id="incd-span">—</div><div class="l">İlk / son görülme</div></div>
+      <div class="kpi"><div class="n" id="incd-risk">—</div><div class="l">En yüksek risk</div></div>
+    </div>
+    <h3 class="sub">Ajan incelemeleri</h3>
+    <ul id="incd-runs" class="flow"></ul>
+    <div id="incd-runs-empty" class="empty" hidden>Henüz inceleme yok.</div>
+    <h3 class="sub">Olaylar</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Zaman</th><th>Saldırı türü</th><th>Risk</th><th>Düzey</th><th>Özet</th></tr></thead>
+        <tbody id="incd-events-body"></tbody>
+      </table>
+    </div>
+    <h3 class="sub">Eylemler</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Tür</th><th>Hedef</th><th>Durum</th><th>Oluşturuldu</th><th>Etki bitişi</th></tr></thead>
+        <tbody id="incd-actions-body"></tbody>
+      </table>
+    </div>
+    <div id="incd-actions-empty" class="empty" hidden>Bu incident için eylem yok.</div>
   </section>
 
   <section class="card">
@@ -337,6 +387,12 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     rolled_back: ['Geri alındı', 'info'], failed: ['Başarısız', 'bad'],
   };
   const LEVEL = { low: ['Düşük', 'info'], medium: ['Orta', 'warn'], high: ['Yüksek', 'bad'] };
+  const INCSTATUS = {
+    new: ['Yeni', 'info'], investigating: ['İnceleniyor', 'warn'], confirmed: ['Onaylandı', 'bad'],
+    false_positive: ['Yanlış alarm', 'muted'], resolved: ['Çözüldü', 'ok'],
+  };
+  const RUNSTATUS = { running: ['Çalışıyor', 'warn'], ok: ['Tamamlandı', 'ok'], failed: ['Başarısız', 'bad'] };
+  const INC_OPEN = new Set(['new', 'investigating', 'confirmed']);
   const EVSTATUS = { new: 'Yeni', investigating: 'İnceleniyor', resolved: 'Çözüldü', dismissed: 'Yanlış alarm' };
 
   // Akış etiketleri de yalnızca sabit tablolardan gelir; bilinmeyen fiil/sonuç ham metin olarak (textContent) gösterilir.
@@ -394,6 +450,8 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
   const events = new Map();
   const actions = new Map();
   const steps = new Map();    // canlı akış adımları (id -> adım)
+  const incidentsMap = new Map();
+  let incOpenOnly = true;
   const fresh = new Set();    // yayınla yeni gelen, henüz vurgulanmamış adımlar
   let flowPaused = false;
   const live = new Map();     // "a:12" -> yayının geldiği an (snapshot'ın eskisi ezmesini önler)
@@ -465,6 +523,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
   function handlePublication(data) {
     if (!data || typeof data !== 'object') return;
     if (data.type === 'step') { addStep(data, true); scheduleFlow(); return; }
+    if (data.type === 'incident') { upsert(incidentsMap, data); scheduleIncidents(); if (incidentId === data.id) scheduleIncidentDetail(); return; }
     if (data.type === 'event') {
       upsert(events, data); live.set('e:' + data.id, Date.now());
       if (filterActive() && matchesFilter(data)) {
@@ -477,6 +536,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     scheduleRender();
     scheduleStats();
     if (sourceIp && (data.source_ip === sourceIp || data.target === sourceIp)) scheduleSource();
+    if (incidentId && ((data.type === 'event' && data.incident_id === incidentId) || data.type === 'action')) scheduleIncidentDetail();
   }
 
   let snapBusy = false;
@@ -492,6 +552,8 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
       for (const e of d.events || []) if ((live.get('e:' + e.id) || 0) < t0) upsert(events, e);
       for (const a of d.actions || []) if ((live.get('a:' + a.id) || 0) < t0) upsert(actions, a);
       for (const st of d.steps || []) addStep(st, false);
+      for (const i of d.incidents || []) upsert(incidentsMap, i);
+      scheduleIncidents();
       scheduleRender();
       scheduleFlow();
     } catch (err) {
@@ -813,7 +875,10 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 
   function initSource() {
     $('source-close').addEventListener('click', closeSource);
-    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && sourceIp) closeSource(); });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Escape') return;
+      if (incidentId) closeIncident(); else if (sourceIp) closeSource();
+    });
   }
 
   // ---- Olay filtreleri -------------------------------------------------------
@@ -1078,6 +1143,154 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     loadStats();
   }
 
+  // ---- Incident'ler --------------------------------------------------------
+  const INC_DEBOUNCE_MS = 1500;
+  let incidentId = 0;
+  let incidentData = null;
+  let incidentSeq = 0;
+  let incidentTimer = 0;
+  let incQueued = false;
+
+  function scheduleIncidents() {
+    if (incQueued) return;
+    incQueued = true;
+    requestAnimationFrame(() => { incQueued = false; renderIncidents(); });
+  }
+
+  function renderIncidents() {
+    const all = [...incidentsMap.values()].sort((a, b) => Date.parse(b.last_seen) - Date.parse(a.last_seen) || b.id - a.id);
+    const rows = incOpenOnly ? all.filter((i) => INC_OPEN.has(i.status)) : all;
+    $('inc-empty').hidden = rows.length > 0;
+    $('inc-empty').textContent = all.length && incOpenOnly ? 'Açık incident yok.' : 'Henüz incident yok.';
+    const open = all.filter((i) => INC_OPEN.has(i.status)).length;
+    $('inc-sub').textContent = all.length ? `${open} açık · ${all.length} kayıt` : 'aynı kaynağın olayları tek saldırı olarak';
+    $('inc-body').replaceChildren(...rows.map((i) => {
+      const btn = el('button', { cls: 'btn small', text: 'Ayrıntı', attrs: { type: 'button', 'aria-label': `Incident ${i.id} ayrıntısı` } });
+      btn.addEventListener('click', () => openIncident(i.id));
+      return el('tr', {},
+        el('td', { cls: 'mono', text: i.id }),
+        el('td', {}, ipLink(i.source_ip)),
+        el('td', { text: i.attack_type }),
+        el('td', {}, chip(LEVEL[i.risk_level], i.risk_level)),
+        el('td', { cls: 'mono', text: i.event_count }),
+        el('td', { text: fmtDateTime(i.last_seen) }),
+        el('td', {}, chip(INCSTATUS[i.status], i.status)),
+        el('td', {}, btn));
+    }));
+  }
+
+  function incidentMessage(text) {
+    const box = $('incd-msg');
+    box.textContent = text || '';
+    box.hidden = !text;
+  }
+
+  async function loadIncidentDetail() {
+    const id = incidentId;
+    if (!id) return;
+    const seq = ++incidentSeq;
+    try {
+      const r = await fetch(`${cfg.incidentUrl}?id=${encodeURIComponent(id)}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (r.status === 403) return;
+      if (r.status === 404) throw new Error('incident bulunamadı');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      if (seq !== incidentSeq || id !== incidentId) return;
+      incidentData = d;
+      incidentMessage('');
+      renderIncidentDetail();
+    } catch (err) {
+      if (seq === incidentSeq) incidentMessage('Incident ayrıntısı alınamadı: ' + err.message);
+    }
+  }
+
+  function scheduleIncidentDetail() {
+    if (incidentTimer) return;
+    incidentTimer = setTimeout(() => { incidentTimer = 0; loadIncidentDetail(); }, INC_DEBOUNCE_MS);
+  }
+
+  function openIncident(id) {
+    incidentId = Number(id);
+    incidentData = null;
+    incidentSeq += 1;
+    $('incd-title').textContent = 'Incident #' + incidentId;
+    $('incd-flags').textContent = '';
+    $('incd-status').textContent = '—';
+    $('incd-events').textContent = '…';
+    $('incd-span').textContent = '—';
+    $('incd-risk').textContent = '—';
+    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body']) $(b).replaceChildren();
+    incidentMessage('Yükleniyor…');
+    const card = $('incd-card');
+    card.hidden = false;
+    card.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    $('incd-title').focus({ preventScroll: true });
+    loadIncidentDetail();
+  }
+
+  function closeIncident() {
+    incidentId = 0;
+    incidentData = null;
+    incidentSeq += 1;
+    clearTimeout(incidentTimer);
+    incidentTimer = 0;
+    $('incd-card').hidden = true;
+  }
+
+  function renderIncidentDetail() {
+    const d = incidentData;
+    if (!d || !incidentId) return;
+    const inc = d.incident;
+    const st = INCSTATUS[inc.status] || [inc.status, 'muted'];
+    $('incd-title').textContent = `Incident #${inc.id} · ${inc.source_ip}`;
+    $('incd-flags').textContent = [d.protected ? 'korumalı IP, engellenmez' : '', inc.attack_type].filter(Boolean).join(' · ');
+    $('incd-status').textContent = st[0];
+    $('incd-events').textContent = String(inc.event_count);
+    $('incd-span').textContent = `${fmtTime(inc.first_seen)} – ${fmtTime(inc.last_seen)}`;
+    $('incd-risk').textContent = Number(inc.max_risk).toFixed(2);
+
+    $('incd-runs-empty').hidden = d.runs.length > 0;
+    $('incd-runs').replaceChildren(...d.runs.map((r) => {
+      const msg = el('span', { cls: 'msg' }, el('span', { cls: 'mono', text: r.agent }));
+      if (typeof r.event_id === 'number') msg.append(document.createTextNode(' '), el('span', { cls: 'muted', text: '(olay #' + r.event_id + ')' }));
+      const li = el('li', {}, el('span', { cls: 't mono', text: fmtTime(r.started_at) }), chip(RUNSTATUS[r.status], r.status), msg);
+      if (r.summary) li.append(el('span', { cls: 'note', text: r.summary }));
+      return li;
+    }));
+
+    $('incd-events-body').replaceChildren(...d.events.map((e) => el('tr', {},
+      el('td', { cls: 'mono', text: e.id }),
+      el('td', { text: fmtDateTime(e.created_at) }),
+      el('td', { text: e.attack_type }),
+      el('td', { cls: 'mono', text: Math.max(0, Math.min(1, Number(e.risk_score) || 0)).toFixed(2) }),
+      el('td', {}, chip(LEVEL[e.risk_level], e.risk_level)),
+      el('td', { cls: 'wrap-cell', text: e.summary || '', title: e.summary || '' }))));
+
+    $('incd-actions-empty').hidden = d.actions.length > 0;
+    $('incd-actions-body').replaceChildren(...d.actions.map((a) => el('tr', {},
+      el('td', { cls: 'mono', text: a.id }),
+      el('td', { text: KIND[a.kind] || a.kind }),
+      el('td', { cls: 'mono', text: a.target }),
+      el('td', {}, chip(STATUS[a.status], a.status)),
+      el('td', { text: fmtDateTime(a.created_at) }),
+      el('td', { text: a.effect_expires_at ? fmtDateTime(a.effect_expires_at) : '—' }))));
+  }
+
+  function initIncidents() {
+    const setMode = (openOnly) => {
+      incOpenOnly = openOnly;
+      $('inc-open').classList.toggle('active', openOnly);
+      $('inc-all').classList.toggle('active', !openOnly);
+      $('inc-open').setAttribute('aria-pressed', String(openOnly));
+      $('inc-all').setAttribute('aria-pressed', String(!openOnly));
+      renderIncidents();
+    };
+    $('inc-open').addEventListener('click', () => setMode(true));
+    $('inc-all').addEventListener('click', () => setMode(false));
+    $('incd-close').addEventListener('click', closeIncident);
+    renderIncidents();
+  }
+
   // ---- Canlı akış ----------------------------------------------------------
   function addStep(st, isLive) {
     if (!st || typeof st.id !== 'number' || typeof st.verb !== 'string' || typeof st.outcome !== 'string') return;
@@ -1150,6 +1363,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     initSource();
     initStats();
     initFlow();
+    initIncidents();
     if (typeof Centrifuge === 'undefined') {
       setConn('bad', 'Canlı bağlantı yok');
       banner([document.createTextNode('Centrifuge istemcisi yüklenemedi (dosya veya bütünlük kontrolü). Liste yüklendiğinde görünür ama canlı güncelleme ve butonlar çalışmaz.')]);
