@@ -7,6 +7,7 @@ urlpatterns = [
     path("panel/", views_panel.panel),
     path("panel/api/snapshot/", views_panel.snapshot),
     path("panel/api/stats/", views_panel.stats_view),
+    path("panel/api/events/", views_panel.events_view),
     path(views_panel.CENTRIFUGE_URL.lstrip("/"), views_panel.centrifuge_js),
     path(views_panel.CHART_URL.lstrip("/"), views_panel.chart_js),
     path("api/events/", views.ingest),

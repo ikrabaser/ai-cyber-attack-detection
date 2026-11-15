@@ -21,7 +21,7 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
-from . import realtime, stats
+from . import event_filters, realtime, stats
 from .models import Action, Event
 
 SNAPSHOT_EVENTS = 50
@@ -140,6 +140,7 @@ def panel(request):
             "wsUrl": ws_url,
             "snapshotUrl": "/panel/api/snapshot/",
             "statsUrl": "/panel/api/stats/",
+            "eventsUrl": "/panel/api/events/",
             "channels": [realtime.CHANNEL_FEED, realtime.CHANNEL_ACTIONS],
         },
     }
@@ -172,5 +173,26 @@ def stats_view(request):
     if range_key not in stats.RANGES:
         return JsonResponse({"error": "geçersiz aralık"}, status=400)
     response = JsonResponse(stats.build_stats(range_key))
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@require_GET
+@_staff_json
+def events_view(request):
+    """Filtrelenmiş olay listesi (en yeni önce). Alanlar canlı akıştakiyle aynı biçimdedir."""
+    try:
+        filters = event_filters.parse(request.GET)
+    except event_filters.FilterError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    matching = event_filters.apply(Event.objects.all(), filters)
+    items = matching.order_by("-id")[: event_filters.LIMIT]
+    response = JsonResponse(
+        {
+            "events": [realtime.event_payload(e) for e in items],
+            "total": matching.count(),
+            "limit": event_filters.LIMIT,
+        }
+    )
     response["Cache-Control"] = "no-store"
     return response

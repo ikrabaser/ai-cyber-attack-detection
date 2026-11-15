@@ -119,6 +119,17 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); gap: 12px; padding: 12px; }
 .chartbox { margin: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
 .chartbox figcaption { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.filters label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+.filters input, .filters select {
+  font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 8px; min-width: 0;
+}
+.filters input { width: 170px; }
+.filters input:focus-visible, .filters select:focus-visible { outline: 2px solid var(--info); outline-offset: 1px; }
+.filters .btn[hidden] { display: none; }
+.filters-msg { padding: 6px 14px; color: var(--bad); font-size: 12px; }
+.filters-msg[hidden] { display: none; }
 .cv { position: relative; height: 220px; }
 .cv-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }
 .cv-empty[hidden] { display: none; }
@@ -195,6 +206,32 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 
   <section class="card">
     <h2>Olaylar <small id="events-count"></small></h2>
+    <form id="filters" class="filters" autocomplete="off" aria-label="Olay filtreleri">
+      <label>Kaynak IP (önek)
+        <input id="f-ip" type="text" maxlength="45" spellcheck="false" placeholder="198.51.100.">
+      </label>
+      <label>Saldırı türü
+        <input id="f-attack" type="text" maxlength="64" list="f-attack-list" spellcheck="false" placeholder="tümü">
+      </label>
+      <datalist id="f-attack-list"></datalist>
+      <label>En az düzey
+        <select id="f-level">
+          <option value="">Tümü</option>
+          <option value="medium">Orta ve üstü</option>
+          <option value="high">Yalnız yüksek</option>
+        </select>
+      </label>
+      <label>Zaman
+        <select id="f-range">
+          <option value="all">Tümü</option>
+          <option value="1h">Son 1 saat</option>
+          <option value="24h">Son 24 saat</option>
+          <option value="7d">Son 7 gün</option>
+        </select>
+      </label>
+      <button type="button" class="btn small" id="f-reset" hidden>Temizle</button>
+    </form>
+    <div id="filters-msg" class="filters-msg" role="status" hidden></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>#</th><th>Zaman</th><th>Kaynak IP</th><th>Hedef</th><th>Saldırı türü</th><th>Risk</th><th>Düzey</th><th>Durum</th><th>Özet</th></tr></thead>
@@ -299,7 +336,13 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 
   function handlePublication(data) {
     if (!data || typeof data !== 'object') return;
-    if (data.type === 'event') { upsert(events, data); live.set('e:' + data.id, Date.now()); }
+    if (data.type === 'event') {
+      upsert(events, data); live.set('e:' + data.id, Date.now());
+      if (filterActive() && matchesFilter(data)) {
+        if (!filtered.has(data.id)) filteredTotal += 1;
+        upsert(filtered, data);
+      }
+    }
     else if (data.type === 'action') { upsert(actions, data); live.set('a:' + data.id, Date.now()); }
     else return;
     scheduleRender();
@@ -385,13 +428,14 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 
   function render() {
     const acts = sortedDesc(actions);
-    const evs = sortedDesc(events);
+    const filterOn = filterActive();
+    const evs = sortedDesc(filterOn ? filtered : events);
     const pending = acts.filter(isPending).sort((a, b) => Date.parse(a.approval_deadline || 0) - Date.parse(b.approval_deadline || 0));
 
     setKpi('kpi-pending', pending.length);
     $('kpi-pending').classList.toggle('attn', pending.length > 0);
     setKpi('kpi-blocks', acts.filter(isActiveBlock).length);
-    setKpi('kpi-high', evs.filter((e) => e.risk_level === 'high').length);
+    setKpi('kpi-high', sortedDesc(events).filter((e) => e.risk_level === 'high').length);
     setKpi('kpi-refused', acts.filter((a) => a.status === 'refused').length);
     document.title = (pending.length ? `(${pending.length}) ` : '') + 'Saldırı Tespit Paneli';
 
@@ -433,8 +477,13 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     }));
 
     // Olaylar tablosu
-    $('events-count').textContent = evs.length ? `son ${evs.length}` : '';
+    $('events-count').textContent = filterOn
+      ? `${evs.length} gösteriliyor · ${filteredTotal} eşleşen`
+      : (evs.length ? `son ${evs.length}` : '');
+    $('events-empty').textContent = filterOn ? 'Filtreye uyan olay yok.' : 'Henüz olay yok.';
     $('events-empty').hidden = evs.length > 0;
+    $('f-reset').hidden = !filterOn;
+    refreshAttackOptions();
     $('events-body').replaceChildren(...evs.map((e) => {
       const risk = Math.max(0, Math.min(1, Number(e.risk_score) || 0));
       const lv = LEVEL[e.risk_level];
@@ -452,6 +501,103 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
         el('td', { text: EVSTATUS[e.status] || e.status }),
         el('td', { cls: 'wrap-cell', text: e.summary || '', title: e.summary || '' }));
     }));
+  }
+
+  // ---- Olay filtreleri -------------------------------------------------------
+  // Sorgu sunucuda çalışır (tüm geçmiş üzerinden); canlı gelen olay ise aynı kurala göre istemcide eşlenir.
+  const LEVEL_RANK = { low: 0, medium: 1, high: 2 };
+  const RANGE_MS = { '1h': 3600e3, '24h': 86400e3, '7d': 7 * 86400e3 };
+  const FILTER_DEBOUNCE_MS = 400;
+  const filter = { ip: '', attack_type: '', min_level: '', range: 'all' };
+  const filtered = new Map();
+  let filteredTotal = 0;
+  let filterSeq = 0;
+  let filterTimer = 0;
+  let attackOptionsKey = '';
+
+  function filterActive() {
+    return Boolean(filter.ip || filter.attack_type || filter.min_level || filter.range !== 'all');
+  }
+
+  function matchesFilter(e) {
+    if (filter.ip && !String(e.source_ip).toLowerCase().startsWith(filter.ip)) return false;
+    if (filter.attack_type && e.attack_type !== filter.attack_type) return false;
+    if (filter.min_level && !((LEVEL_RANK[e.risk_level] ?? -1) >= LEVEL_RANK[filter.min_level])) return false;
+    if (filter.range !== 'all' && !(Date.parse(e.created_at) >= Date.now() - RANGE_MS[filter.range])) return false;
+    return true;
+  }
+
+  function showFilterError(text) {
+    const box = $('filters-msg');
+    box.textContent = text || '';
+    box.hidden = !text;
+  }
+
+  async function loadFiltered() {
+    if (!filterActive()) return;
+    const seq = ++filterSeq;
+    const qs = new URLSearchParams();
+    if (filter.ip) qs.set('ip', filter.ip);
+    if (filter.attack_type) qs.set('attack_type', filter.attack_type);
+    if (filter.min_level) qs.set('min_level', filter.min_level);
+    if (filter.range !== 'all') qs.set('range', filter.range);
+    try {
+      const r = await fetch(`${cfg.eventsUrl}?${qs}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (r.status === 403) return; // oturum sorununu anlık görüntü isteği zaten bildirir
+      if (r.status === 400) { const d = await r.json(); throw new Error(d.error || 'geçersiz filtre'); }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      if (seq !== filterSeq) return; // araya yeni bir filtre girdi
+      filtered.clear();
+      for (const e of d.events || []) filtered.set(e.id, e);
+      filteredTotal = Number(d.total) || filtered.size;
+      showFilterError('');
+    } catch (err) {
+      if (seq === filterSeq) showFilterError('Filtre uygulanamadı: ' + err.message);
+    }
+    scheduleRender();
+  }
+
+  function onFilterChange() {
+    filter.ip = $('f-ip').value.trim().toLowerCase();
+    filter.attack_type = $('f-attack').value.trim();
+    filter.min_level = $('f-level').value;
+    filter.range = $('f-range').value;
+    clearTimeout(filterTimer);
+    filterSeq += 1; // uçuştaki eski yanıtı geçersiz kıl
+    filtered.clear();
+    showFilterError('');
+    if (filterActive()) {
+      // Sunucu yanıtı gelene kadar elde olanlarla hemen göster.
+      for (const e of events.values()) if (matchesFilter(e)) filtered.set(e.id, e);
+      filteredTotal = filtered.size;
+      filterTimer = setTimeout(loadFiltered, FILTER_DEBOUNCE_MS);
+    }
+    scheduleRender();
+  }
+
+  // Saldırı türü kutusunun önerileri: görülen türler (yazarak başka bir tür de aranabilir).
+  function refreshAttackOptions() {
+    const names = new Set();
+    for (const e of events.values()) if (e.attack_type) names.add(e.attack_type);
+    for (const e of filtered.values()) if (e.attack_type) names.add(e.attack_type);
+    if (statsData) for (const r of statsData.attack_types) if (!r.other) names.add(r.name);
+    const list = [...names].sort();
+    const key = list.join('\n');
+    if (key === attackOptionsKey) return;
+    attackOptionsKey = key;
+    $('f-attack-list').replaceChildren(...list.map((n) => el('option', { attrs: { value: n } })));
+  }
+
+  function initFilters() {
+    $('filters').addEventListener('submit', (ev) => ev.preventDefault());
+    for (const id of ['f-ip', 'f-attack']) $(id).addEventListener('input', onFilterChange);
+    for (const id of ['f-level', 'f-range']) $(id).addEventListener('change', onFilterChange);
+    $('f-reset').addEventListener('click', () => {
+      $('f-ip').value = ''; $('f-attack').value = '';
+      $('f-level').value = ''; $('f-range').value = 'all';
+      onFilterChange();
+    });
   }
 
   // ---- Grafikler -------------------------------------------------------------
@@ -622,6 +768,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
   function start() {
     render();
     loadSnapshot();
+    initFilters();
     initStats();
     if (typeof Centrifuge === 'undefined') {
       setConn('bad', 'Canlı bağlantı yok');
