@@ -81,6 +81,26 @@ Tek sayfa, Django'dan servis edilir. Açılınca son olaylar/eylemler yüklenir,
 - İsteğe bağlı ortam değişkenleri: `RT_SESSION_TTL_SECONDS` (varsayılan 300; oturum iptalinin
   bağlantıyı kapatma süresi), `RT_PUBLIC_PORT` (8001), `RT_WS_URL` (boşsa sayfanın ana makine adından türetilir).
 
+### Bildirim (e-posta)
+
+İnsan kararı bekleyen her **yeni** eylem için (aynı IP'ye tekrarlanan olaylar tek eylem, tek e-posta üretir) ve
+korumalı bir hedef yüzünden reddedilen öneriler için e-posta gider. E-posta yalnızca haber verir: içinde onay
+bağlantısı yoktur, karar paneldeki staff oturumundan gelir. Saldırgan kontrollü alanlar (olay özeti, log alıntıları)
+e-postaya konmaz; saldırı türü ve hedef temizlenir.
+
+- `NOTIFY_EMAIL_TO` boşsa bildirim kapalıdır. `EMAIL_HOST` boşsa e-posta gitmez, worker loguna yazılır.
+- Gmail: `EMAIL_HOST=smtp.gmail.com`, `EMAIL_PORT=587`, `EMAIL_HOST_USER=<gmail adresin>`,
+  `EMAIL_HOST_PASSWORD=<uygulama parolası>`. Normal şifre çalışmaz; Google hesabında 2 adımlı doğrulama açıkken
+  "Uygulama parolaları"ndan üretilir (boşluksuz yaz).
+- SMTP hatası ana akışı bozmaz: loglanır ve denetim kaydına `send_notification / failed` yazılır.
+- Korumalı hedef reddi her pencerede tekrar edebileceği için aynı hedef için `NOTIFY_REFUSED_COOLDOWN_SECONDS`
+  (varsayılan 900 sn) içinde yeniden e-posta gitmez.
+- Ayarları denemek için (hatayı yutmaz, nedenini yazar):
+
+```bash
+docker compose exec backend python manage.py send_test_email
+```
+
 ### Boru hattını sensör olmadan deneme
 
 ```bash
@@ -98,7 +118,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 61 test, Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 71 test, Postgres gerekmez
 ```
 
 Eşzamanlı öneri yarışının testi (`core/tests_concurrency.py`, 2 test) yalnızca PostgreSQL'de çalışır, sqlite'ta

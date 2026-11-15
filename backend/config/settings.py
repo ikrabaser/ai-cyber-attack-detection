@@ -151,3 +151,26 @@ ALLOWED_CONFIG_FIXES = env_list("ALLOWED_CONFIG_FIXES", "ssh_disable_password_au
 # Takılabilir parçalar (nokta ile ayrılmış sınıf yolu)
 FIREWALL_BACKEND = env("FIREWALL_BACKEND", "core.firewall.LogOnlyBackend")
 AGENT_BACKEND = env("AGENT_BACKEND", "core.agent.RuleAgent")
+
+# --- Bildirim (e-posta) ---------------------------------------------------
+
+# NOTIFY_EMAIL_TO boşsa bildirim kapalıdır. EMAIL_HOST boşsa e-posta gönderilmez, konsola yazılır.
+# Gmail için: EMAIL_HOST=smtp.gmail.com, EMAIL_PORT=587, EMAIL_USE_TLS=true ve EMAIL_HOST_PASSWORD
+# olarak hesabın "uygulama parolası" (normal şifre çalışmaz).
+EMAIL_HOST = env("EMAIL_HOST", "")
+EMAIL_PORT = int(env("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+EMAIL_TIMEOUT = int(env("EMAIL_TIMEOUT", "10"))  # sn; SMTP takılırsa worker'ı bekletmesin
+EMAIL_BACKEND = (
+    "django.core.mail.backends.smtp.EmailBackend"
+    if EMAIL_HOST
+    else "django.core.mail.backends.console.EmailBackend"
+)
+NOTIFY_EMAIL_TO = env_list("NOTIFY_EMAIL_TO", "")
+NOTIFY_EMAIL_FROM = env("NOTIFY_EMAIL_FROM", "") or EMAIL_HOST_USER or "ids@localhost"
+# Korumalı hedef reddi aynı hedef için bu süre içinde tekrar e-posta üretmez (sensör her pencerede olay üretir).
+NOTIFY_REFUSED_COOLDOWN_SECONDS = int(env("NOTIFY_REFUSED_COOLDOWN_SECONDS", "900"))
+# E-postadaki panel bağlantısı için. Dışarıdan erişim kullanıyorsan (ör. tünel) onu yaz.
+PANEL_BASE_URL = env("PANEL_BASE_URL", "http://localhost:8000")

@@ -23,7 +23,7 @@ from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from . import audit, realtime
+from . import audit, notify, realtime
 from .firewall import get_backend
 from .models import Action
 from .protection import is_protected_target
@@ -47,6 +47,12 @@ class ActionError(Exception):
 def _publish_after_commit(action):
     payload = realtime.action_payload(action)
     transaction.on_commit(lambda: realtime.publish(realtime.CHANNEL_ACTIONS, payload))
+
+
+def _notify_after_commit(action):
+    """Yeni (tekrar olmayan) bir eylem için e-posta; işlem commit olduktan sonra, hata akışı bozmaz."""
+    action_id = action.pk
+    transaction.on_commit(lambda: notify.notify_action(action_id))
 
 
 def _parse_ttl(params):
@@ -128,6 +134,7 @@ def propose_action(event, kind, target, params=None, proposed_by="agent"):
         audit.record(proposed_by, f"propose_{kind}", target, "refused",
                      reason="protected target", event_id=event_id, action_id=action.pk)
         _publish_after_commit(action)
+        _notify_after_commit(action)
         return action
 
     ttl = _parse_ttl(params) if kind == Action.Kind.BLOCK_IP else None
@@ -162,6 +169,7 @@ def propose_action(event, kind, target, params=None, proposed_by="agent"):
 
     if requires_approval:
         _publish_after_commit(action)
+        _notify_after_commit(action)
         return action
     return _execute_locked(action.pk, actor="system:auto")
 
