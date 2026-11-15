@@ -108,8 +108,12 @@ Sensör aynı saldırgan için her 10 saniyelik pencerede yeni olay üretir. Bu 
 açık incident vardır (veritabanında kısmi unique kısıt; eşzamanlı olaylar tek incident'te buluşur). Incident'in düzeyi, skoru ve
 saldırı türü en yüksek riskli olaya göre tutulur.
 
-- Yaşam döngüsü: Yeni → İnceleniyor → Onaylandı / Yanlış alarm → Çözüldü. Bu sürümde "Yeni → İnceleniyor" (ajan çalışınca) ve
-  hareketsizlikten "Çözüldü" otomatik; Onaylandı / Yanlış alarm kararı panelden verilecek (sonraki adım).
+- Yaşam döngüsü: Yeni → İnceleniyor → Onaylandı / Yanlış alarm → Çözüldü. "Yeni → İnceleniyor" (ajan çalışınca) ve
+  hareketsizlikten "Çözüldü" otomatiktir; Onaylandı / Yanlış alarm / Çözüldü kararını yalnızca doğrulanmış `is_staff` oturumu
+  panelden verir (Centrifugo RPC `ids:confirm_incident`, `ids:false_positive_incident`, `ids:resolve_incident`).
+  Onay incident'i kapatmaz (açık kalır, sonra Çöz ile kapatılır); Yanlış alarm ve Çöz iki tıklamayla onaylanır. Kapalı
+  incident'e karar verilemez (409); karar denetim kaydına (`confirm_incident` / `close_incident`) yazılır ve hareketsizlik
+  kapanışı insan kararını ezmez. Karar bekleyen eylemlere dokunmaz: eylemler ayrı onay akışından geçer.
 - Son olaydan beri `INCIDENT_IDLE_SECONDS` (varsayılan 900) geçen açık incident'ler dakikada bir otomatik kapanır.
 - Ajanın her incelemesi `AnalysisRun` olarak kaydedilir (ajan adı, durum, özet, süre). Hata metni kayda yazılmaz, yalnızca hata türü.
 - Eylemler (`Action`) olay üzerinden incident'e bağlanır. Eski olaylar incident'siz kalır, hiçbir şey bozulmaz.
@@ -156,7 +160,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 163 test (+3 atlanır), Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 180 test (+3 atlanır), Postgres gerekmez
 ```
 
 Eşzamanlı öneri ve incident yarışlarının testleri (`core/tests_concurrency.py`, 3 test) yalnızca PostgreSQL'de çalışır, sqlite'ta

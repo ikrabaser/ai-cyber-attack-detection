@@ -21,7 +21,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from . import actions, realtime
+from . import actions, incident_detail, incidents, realtime
 from .actions import ActionError
 
 ALLOWED_CHANNELS = {
@@ -35,6 +35,12 @@ RPC_METHODS = {
     "ids:approve_action": actions.approve_action,
     "ids:reject_action": actions.reject_action,
     "ids:rollback_action": actions.rollback_by_user,
+}
+
+INCIDENT_RPC = {
+    "ids:confirm_incident": "confirm",
+    "ids:false_positive_incident": "false_positive",
+    "ids:resolve_incident": "resolve",
 }
 
 
@@ -119,11 +125,22 @@ def rpc(request, body):
     if user is None:
         return _err(403, "permission denied")
 
+    data = body.get("data") or {}
+    decision = INCIDENT_RPC.get(body.get("method"))
+    if decision is not None:
+        try:
+            incident_id = incident_detail.parse_id(str(data.get("incident_id", "")))
+            incident = incidents.decide(incident_id, user, decision)
+        except incident_detail.IncidentError:
+            return _err(400, "incident_id gerekli")
+        except incidents.DecisionError as exc:
+            return _err(exc.code, exc.message)
+        return JsonResponse({"result": {"data": {"incident_id": incident.pk, "status": incident.status}}})
+
     handler = RPC_METHODS.get(body.get("method"))
     if handler is None:
         return _err(404, "method not found")
 
-    data = body.get("data") or {}
     try:
         action = handler(int(data.get("action_id")), user)
     except (TypeError, ValueError):

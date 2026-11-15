@@ -40,9 +40,13 @@ def _idle():
 def _close(incident, actor, now, status=Incident.Status.RESOLVED):
     incident.status = status
     incident.closed_at = now
-    incident.decided_by = actor
-    incident.decided_at = now
-    incident.save(update_fields=["status", "closed_at", "decided_by", "decided_at"])
+    fields = ["status", "closed_at"]
+    # Daha önce bir insan karar verdiyse (örn. onayladıysa) hareketsizlik kapanışı onu ezmez.
+    if actor.startswith("user:") or not incident.decided_by:
+        incident.decided_by = actor
+        incident.decided_at = now
+        fields += ["decided_by", "decided_at"]
+    incident.save(update_fields=fields)
     audit.record(actor, "close_incident", incident.source_ip, status, incident_id=incident.pk)
     _publish_after_commit(incident)
 
@@ -122,3 +126,47 @@ def close_idle(now=None):
             _close(incident, "system:idle", now)
             closed += 1
     return closed
+
+
+class DecisionError(Exception):
+    """Karar uygulanamadı; `code` HTTP benzeri durum kodu."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+DECISIONS = ("confirm", "false_positive", "resolve")
+
+
+def decide(incident_id, user, decision):
+    """İnsan kararı: onayla (gerçek saldırı), yanlış alarm ya da çöz.
+
+    Yalnızca açık incident için geçerlidir; karar denetim kaydına ve panele yansır. Bekleyen eylemlere
+    dokunmaz: onlar ayrı bir insan kararıdır ve politika katmanından geçer.
+    """
+    if decision not in DECISIONS:
+        raise ValueError(f"bilinmeyen karar: {decision}")
+    actor = f"user:{user.pk}"
+    now = timezone.now()
+    with transaction.atomic():
+        incident = Incident.objects.select_for_update().filter(pk=incident_id).first()
+        if incident is None:
+            raise DecisionError(404, "incident bulunamadı")
+        if incident.status not in OPEN:
+            raise DecisionError(409, f"incident zaten kapalı: {incident.get_status_display()}")
+        if decision == "confirm":
+            if incident.status == Incident.Status.CONFIRMED:
+                raise DecisionError(409, "incident zaten onaylı")
+            incident.status = Incident.Status.CONFIRMED
+            incident.decided_by = actor
+            incident.decided_at = now
+            incident.save(update_fields=["status", "decided_by", "decided_at"])
+            audit.record(actor, "confirm_incident", incident.source_ip, "confirmed", incident_id=incident.pk)
+            _publish_after_commit(incident)
+        elif decision == "false_positive":
+            _close(incident, actor, now, Incident.Status.FALSE_POSITIVE)
+        else:
+            _close(incident, actor, now, Incident.Status.RESOLVED)
+    return incident

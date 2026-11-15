@@ -1,0 +1,482 @@
+diff --git a/README.md b/README.md
+index cdc51c1..2c8d230 100644
+--- a/README.md
++++ b/README.md
+@@ -108,8 +108,12 @@ Sensör aynı saldırgan için her 10 saniyelik pencerede yeni olay üretir. Bu
+ açık incident vardır (veritabanında kısmi unique kısıt; eşzamanlı olaylar tek incident'te buluşur). Incident'in düzeyi, skoru ve
+ saldırı türü en yüksek riskli olaya göre tutulur.
+ 
+-- Yaşam döngüsü: Yeni → İnceleniyor → Onaylandı / Yanlış alarm → Çözüldü. Bu sürümde "Yeni → İnceleniyor" (ajan çalışınca) ve
+-  hareketsizlikten "Çözüldü" otomatik; Onaylandı / Yanlış alarm kararı panelden verilecek (sonraki adım).
++- Yaşam döngüsü: Yeni → İnceleniyor → Onaylandı / Yanlış alarm → Çözüldü. "Yeni → İnceleniyor" (ajan çalışınca) ve
++  hareketsizlikten "Çözüldü" otomatiktir; Onaylandı / Yanlış alarm / Çözüldü kararını yalnızca doğrulanmış `is_staff` oturumu
++  panelden verir (Centrifugo RPC `ids:confirm_incident`, `ids:false_positive_incident`, `ids:resolve_incident`).
++  Onay incident'i kapatmaz (açık kalır, sonra Çöz ile kapatılır); Yanlış alarm ve Çöz iki tıklamayla onaylanır. Kapalı
++  incident'e karar verilemez (409); karar denetim kaydına (`confirm_incident` / `close_incident`) yazılır ve hareketsizlik
++  kapanışı insan kararını ezmez. Karar bekleyen eylemlere dokunmaz: eylemler ayrı onay akışından geçer.
+ - Son olaydan beri `INCIDENT_IDLE_SECONDS` (varsayılan 900) geçen açık incident'ler dakikada bir otomatik kapanır.
+ - Ajanın her incelemesi `AnalysisRun` olarak kaydedilir (ajan adı, durum, özet, süre). Hata metni kayda yazılmaz, yalnızca hata türü.
+ - Eylemler (`Action`) olay üzerinden incident'e bağlanır. Eski olaylar incident'siz kalır, hiçbir şey bozulmaz.
+@@ -156,7 +160,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
+ ```bash
+ cd backend
+ pip install -r requirements.txt
+-python manage.py test --settings=config.settings_test   # 163 test (+3 atlanır), Postgres gerekmez
++python manage.py test --settings=config.settings_test   # 180 test (+3 atlanır), Postgres gerekmez
+ ```
+ 
+ Eşzamanlı öneri ve incident yarışlarının testleri (`core/tests_concurrency.py`, 3 test) yalnızca PostgreSQL'de çalışır, sqlite'ta
+diff --git a/backend/core/incidents.py b/backend/core/incidents.py
+index 55b1036..1414d58 100644
+--- a/backend/core/incidents.py
++++ b/backend/core/incidents.py
+@@ -40,9 +40,13 @@ def _idle():
+ def _close(incident, actor, now, status=Incident.Status.RESOLVED):
+     incident.status = status
+     incident.closed_at = now
+-    incident.decided_by = actor
+-    incident.decided_at = now
+-    incident.save(update_fields=["status", "closed_at", "decided_by", "decided_at"])
++    fields = ["status", "closed_at"]
++    # Daha önce bir insan karar verdiyse (örn. onayladıysa) hareketsizlik kapanışı onu ezmez.
++    if actor.startswith("user:") or not incident.decided_by:
++        incident.decided_by = actor
++        incident.decided_at = now
++        fields += ["decided_by", "decided_at"]
++    incident.save(update_fields=fields)
+     audit.record(actor, "close_incident", incident.source_ip, status, incident_id=incident.pk)
+     _publish_after_commit(incident)
+ 
+@@ -122,3 +126,47 @@ def close_idle(now=None):
+             _close(incident, "system:idle", now)
+             closed += 1
+     return closed
++
++
++class DecisionError(Exception):
++    """Karar uygulanamadı; `code` HTTP benzeri durum kodu."""
++
++    def __init__(self, code, message):
++        super().__init__(message)
++        self.code = code
++        self.message = message
++
++
++DECISIONS = ("confirm", "false_positive", "resolve")
++
++
++def decide(incident_id, user, decision):
++    """İnsan kararı: onayla (gerçek saldırı), yanlış alarm ya da çöz.
++
++    Yalnızca açık incident için geçerlidir; karar denetim kaydına ve panele yansır. Bekleyen eylemlere
++    dokunmaz: onlar ayrı bir insan kararıdır ve politika katmanından geçer.
++    """
++    if decision not in DECISIONS:
++        raise ValueError(f"bilinmeyen karar: {decision}")
++    actor = f"user:{user.pk}"
++    now = timezone.now()
++    with transaction.atomic():
++        incident = Incident.objects.select_for_update().filter(pk=incident_id).first()
++        if incident is None:
++            raise DecisionError(404, "incident bulunamadı")
++        if incident.status not in OPEN:
++            raise DecisionError(409, f"incident zaten kapalı: {incident.get_status_display()}")
++        if decision == "confirm":
++            if incident.status == Incident.Status.CONFIRMED:
++                raise DecisionError(409, "incident zaten onaylı")
++            incident.status = Incident.Status.CONFIRMED
++            incident.decided_by = actor
++            incident.decided_at = now
++            incident.save(update_fields=["status", "decided_by", "decided_at"])
++            audit.record(actor, "confirm_incident", incident.source_ip, "confirmed", incident_id=incident.pk)
++            _publish_after_commit(incident)
++        elif decision == "false_positive":
++            _close(incident, actor, now, Incident.Status.FALSE_POSITIVE)
++        else:
++            _close(incident, actor, now, Incident.Status.RESOLVED)
++    return incident
+diff --git a/backend/core/templates/core/panel.html b/backend/core/templates/core/panel.html
+index 7af7715..18d0612 100644
+--- a/backend/core/templates/core/panel.html
++++ b/backend/core/templates/core/panel.html
+@@ -138,6 +138,8 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+ .linkbtn:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 2px; }
+ #source-card[hidden], #incd-card[hidden] { display: none; }
+ #incd-title { outline: none; }
++.incd-btns { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
++.incd-btns:empty { display: none; }
+ #source-title { outline: none; }
+ .src-kpis { padding: 12px 12px 0; margin-bottom: 0; }
+ .charts.one { grid-template-columns: 1fr; }
+@@ -233,6 +235,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+       <div class="kpi"><div class="n" id="incd-span">—</div><div class="l">İlk / son görülme</div></div>
+       <div class="kpi"><div class="n" id="incd-risk">—</div><div class="l">En yüksek risk</div></div>
+     </div>
++    <div id="incd-btns" class="incd-btns" role="group" aria-label="Incident kararı"></div>
+     <h3 class="sub">Ajan incelemeleri</h3>
+     <ul id="incd-runs" class="flow"></ul>
+     <div id="incd-runs-empty" class="empty" hidden>Henüz inceleme yok.</div>
+@@ -400,12 +403,12 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+     ingest: ['Sensör', 'info'], enqueue: ['Kuyruk', 'muted'], investigate: ['Agent', 'info'],
+     propose: ['Politika', 'warn'], execute: ['Eylem', 'ok'], send: ['Bildirim', 'muted'],
+     reject: ['Karar', 'muted'], rollback: ['Karar', 'info'], expire: ['Sistem', 'muted'],
+-    open: ['Incident', 'info'], close: ['Incident', 'muted'],
++    open: ['Incident', 'info'], close: ['Incident', 'muted'], confirm: ['Karar', 'bad'],
+   };
+   const STEP_TONE = {
+     created: 'ok', done: 'ok', sent: 'ok', executed: 'ok', rolled_back: 'ok', proposed: 'warn',
+     refused: 'bad', failed: 'bad', skipped: 'muted', deduplicated: 'muted', expired: 'muted',
+-    rejected: 'muted', dry_run: 'info',
++    rejected: 'muted', dry_run: 'info', confirmed: 'bad',
+   };
+   const FLOW_SHOW = 40;
+   const FLOW_KEEP = 80;
+@@ -415,7 +418,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+     const i = verb.indexOf('_');
+     if (i < 0) return [verb, ''];
+     const head = verb.slice(0, i), rest = verb.slice(i + 1);
+-    if (['send', 'ingest', 'enqueue', 'investigate', 'open', 'close'].includes(head)) return [head, rest];
++    if (['send', 'ingest', 'enqueue', 'investigate', 'open', 'close', 'confirm'].includes(head)) return [head, rest];
+     return KIND_IDS.includes(rest) ? [head, rest] : [verb, ''];
+   }
+   function stepText(st) {
+@@ -427,7 +430,8 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+       enqueue: { skipped: 'İnceleme kuyruğa alınmadı (aynı IP için görev zaten bekliyor)' },
+       investigate: { done: 'Agent incelemeyi tamamladı', failed: 'Agent incelemesi başarısız' },
+       open: { created: 'Incident açıldı' },
+-      close: { resolved: 'Incident kapandı (uzun süredir olay yok)', false_positive: 'Incident yanlış alarm olarak kapandı' },
++      confirm: { confirmed: 'Incident gerçek saldırı olarak onaylandı' },
++      close: { resolved: 'Incident çözüldü', false_positive: 'Incident yanlış alarm olarak kapandı' },
+       propose: {
+         proposed: `${kind} önerildi`, refused: `${kind} önerisi korumalı hedef nedeniyle reddedildi`,
+         deduplicated: `${kind} zaten var, tekrar açılmadı`,
+@@ -564,6 +568,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+   }
+ 
+   // ---- RPC (onay / red / geri alma) ----------------------------------------
++  const INC_METHODS = { confirm: 'ids:confirm_incident', false_positive: 'ids:false_positive_incident', resolve: 'ids:resolve_incident' };
+   const METHODS = { approve: 'ids:approve_action', reject: 'ids:reject_action', rollback: 'ids:rollback_action' };
+   let client = null;
+ 
+@@ -1219,7 +1224,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+     $('incd-events').textContent = '…';
+     $('incd-span').textContent = '—';
+     $('incd-risk').textContent = '—';
+-    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body']) $(b).replaceChildren();
++    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body', 'incd-btns']) $(b).replaceChildren();
+     incidentMessage('Yükleniyor…');
+     const card = $('incd-card');
+     card.hidden = false;
+@@ -1237,6 +1242,57 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+     $('incd-card').hidden = true;
+   }
+ 
++  function incidentButton(label, cls, id, method, needConfirm) {
++    const key = method + ':i' + id;
++    const isArmed = (armed.get(key) || 0) > Date.now();
++    const b = el('button', { cls: 'btn ' + cls + (isArmed ? ' confirm' : ''), text: isArmed ? 'Emin misin? ' + label : label, attrs: { type: 'button' } });
++    if (busy.has(key)) b.disabled = true;
++    b.addEventListener('click', () => {
++      if (needConfirm && !((armed.get(key) || 0) > Date.now())) {
++        armed.set(key, Date.now() + CONFIRM_MS);
++        renderIncidentButtons();
++        setTimeout(renderIncidentButtons, CONFIRM_MS + 50);
++        return;
++      }
++      decideIncident(id, method);
++    });
++    return b;
++  }
++
++  function renderIncidentButtons() {
++    const box = $('incd-btns');
++    const inc = incidentData && incidentData.incident;
++    if (!inc || inc.id !== incidentId || !INC_OPEN.has(inc.status)) { box.replaceChildren(); return; }
++    const kids = [];
++    if (inc.status !== 'confirmed') kids.push(incidentButton('Saldırıyı onayla', 'approve', inc.id, INC_METHODS.confirm, false));
++    kids.push(incidentButton('Yanlış alarm', 'reject', inc.id, INC_METHODS.false_positive, true));
++    kids.push(incidentButton('Çöz', '', inc.id, INC_METHODS.resolve, true));
++    box.replaceChildren(...kids);
++  }
++
++  async function decideIncident(id, method) {
++    const key = method + ':i' + id;
++    armed.delete(key);
++    busy.add(key);
++    renderIncidentButtons();
++    try {
++      if (!client) throw new Error('canlı bağlantı yok');
++      const res = await client.rpc(method, { incident_id: id });
++      const d = res && res.data;
++      if (d && incidentsMap.has(d.incident_id)) {
++        incidentsMap.set(d.incident_id, Object.assign({}, incidentsMap.get(d.incident_id), { status: d.status }));
++      }
++      toast(`Incident #${id}: ${(INCSTATUS[d && d.status] || [d && d.status || 'tamam'])[0]}`, 'ok');
++    } catch (e) {
++      toast(`Incident #${id}: ${e.message || 'hata'}${e.code ? ' (' + e.code + ')' : ''}`, 'bad');
++    } finally {
++      busy.delete(key);
++      scheduleIncidents();
++      if (incidentId === id) loadIncidentDetail();
++      renderIncidentButtons();
++    }
++  }
++
+   function renderIncidentDetail() {
+     const d = incidentData;
+     if (!d || !incidentId) return;
+@@ -1248,6 +1304,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
+     $('incd-events').textContent = String(inc.event_count);
+     $('incd-span').textContent = `${fmtTime(inc.first_seen)} – ${fmtTime(inc.last_seen)}`;
+     $('incd-risk').textContent = Number(inc.max_risk).toFixed(2);
++    renderIncidentButtons();
+ 
+     $('incd-runs-empty').hidden = d.runs.length > 0;
+     $('incd-runs').replaceChildren(...d.runs.map((r) => {
+diff --git a/backend/core/tests_incident_decisions.py b/backend/core/tests_incident_decisions.py
+new file mode 100644
+index 0000000..fab7216
+--- /dev/null
++++ b/backend/core/tests_incident_decisions.py
+@@ -0,0 +1,191 @@
++import json
++from datetime import timedelta
++from unittest import mock
++
++from django.contrib.auth import get_user_model
++from django.db import IntegrityError, transaction
++from django.test import TestCase
++from django.utils import timezone
++
++from . import incidents, realtime
++from .models import AuditLog, Incident
++
++User = get_user_model()
++SECRET = {"HTTP_X_CENTRIFUGO_PROXY_SECRET": "test-proxy-secret"}
++
++
++def make_incident(status=Incident.Status.NEW, ip="203.0.113.7", ago=0):
++    seen = timezone.now() - timedelta(seconds=ago)
++    return Incident.objects.create(
++        source_ip=ip, status=status, risk_level="high", max_risk=0.9, attack_type="brute_force",
++        event_count=1, first_seen=seen, last_seen=seen,
++    )
++
++
++class DecideTests(TestCase):
++    def setUp(self):
++        self.user = User.objects.create_user("ops", password="x", is_staff=True)
++        self.actor = f"user:{self.user.pk}"
++
++    def test_confirm_from_new_and_investigating(self):
++        for status in (Incident.Status.NEW, Incident.Status.INVESTIGATING):
++            inc = make_incident(status)
++            out = incidents.decide(inc.pk, self.user, "confirm")
++            inc.refresh_from_db()
++            self.assertEqual(out.status, Incident.Status.CONFIRMED)
++            self.assertEqual(inc.status, Incident.Status.CONFIRMED)
++            self.assertEqual(inc.decided_by, self.actor)
++            self.assertIsNotNone(inc.decided_at)
++            self.assertIsNone(inc.closed_at)  # onay kapatmaz
++            Incident.objects.all().delete()
++
++    def test_confirm_audit_row(self):
++        inc = make_incident()
++        incidents.decide(inc.pk, self.user, "confirm")
++        row = AuditLog.objects.get(verb="confirm_incident")
++        self.assertEqual((row.actor, row.target, row.outcome), (self.actor, "203.0.113.7", "confirmed"))
++        self.assertEqual(row.detail.get("incident_id"), inc.pk)
++
++    def test_confirmed_can_be_resolved_and_keeps_open_slot_until_then(self):
++        inc = make_incident()
++        incidents.decide(inc.pk, self.user, "confirm")
++        # Onaylı incident hâlâ açık: aynı IP için yeni açılamaz.
++        with self.assertRaises(IntegrityError), transaction.atomic():
++            Incident.objects.create(
++                source_ip=inc.source_ip, status=Incident.Status.NEW, risk_level="low", max_risk=0.1,
++                attack_type="x", event_count=1, first_seen=timezone.now(), last_seen=timezone.now())
++        incidents.decide(inc.pk, self.user, "resolve")
++        inc.refresh_from_db()
++        self.assertEqual(inc.status, Incident.Status.RESOLVED)
++        self.assertIsNotNone(inc.closed_at)
++
++    def test_false_positive_and_resolve_close(self):
++        for decision, status in (("false_positive", Incident.Status.FALSE_POSITIVE), ("resolve", Incident.Status.RESOLVED)):
++            inc = make_incident()
++            incidents.decide(inc.pk, self.user, decision)
++            inc.refresh_from_db()
++            self.assertEqual(inc.status, status)
++            self.assertIsNotNone(inc.closed_at)
++            self.assertEqual(inc.decided_by, self.actor)
++            row = AuditLog.objects.filter(verb="close_incident").latest("id")
++            self.assertEqual((row.actor, row.outcome), (self.actor, status))
++            inc.delete()
++
++    def test_closed_incident_rejects_every_decision(self):
++        for status in (Incident.Status.RESOLVED, Incident.Status.FALSE_POSITIVE):
++            inc = make_incident(status)
++            for decision in incidents.DECISIONS:
++                with self.assertRaises(incidents.DecisionError) as cm:
++                    incidents.decide(inc.pk, self.user, decision)
++                self.assertEqual(cm.exception.code, 409)
++            inc.delete()
++
++    def test_double_confirm_conflicts(self):
++        inc = make_incident()
++        incidents.decide(inc.pk, self.user, "confirm")
++        with self.assertRaises(incidents.DecisionError) as cm:
++            incidents.decide(inc.pk, self.user, "confirm")
++        self.assertEqual(cm.exception.code, 409)
++        self.assertEqual(AuditLog.objects.filter(verb="confirm_incident").count(), 1)
++
++    def test_missing_incident_and_unknown_decision(self):
++        with self.assertRaises(incidents.DecisionError) as cm:
++            incidents.decide(999999, self.user, "confirm")
++        self.assertEqual(cm.exception.code, 404)
++        inc = make_incident()
++        with self.assertRaises(ValueError):
++            incidents.decide(inc.pk, self.user, "delete")
++        inc.refresh_from_db()
++        self.assertEqual(inc.status, Incident.Status.NEW)
++
++    def test_idle_close_keeps_human_decider(self):
++        inc = make_incident(ago=100000)
++        incidents.decide(inc.pk, self.user, "confirm")
++        incidents.close_idle()
++        inc.refresh_from_db()
++        self.assertEqual(inc.status, Incident.Status.RESOLVED)
++        self.assertEqual(inc.decided_by, self.actor)
++
++    def test_idle_close_of_undecided_is_system(self):
++        inc = make_incident(ago=100000)
++        incidents.close_idle()
++        inc.refresh_from_db()
++        self.assertEqual(inc.decided_by, "system:idle")
++
++    def test_publishes_after_commit(self):
++        inc = make_incident()
++        with mock.patch("core.realtime.publish") as pub:
++            with self.captureOnCommitCallbacks(execute=True):
++                incidents.decide(inc.pk, self.user, "false_positive")
++        sent = [c.args for c in pub.call_args_list if c.args[0] == realtime.CHANNEL_INCIDENTS]
++        self.assertEqual(len(sent), 1)
++        self.assertEqual(sent[0][1]["status"], "false_positive")
++
++    def test_no_publish_before_commit(self):
++        inc = make_incident()
++        with mock.patch("core.realtime.publish") as pub:
++            incidents.decide(inc.pk, self.user, "confirm")
++        pub.assert_not_called()
++
++
++class DecisionRpcTests(TestCase):
++    def setUp(self):
++        self.staff = User.objects.create_user("ops", password="x", is_staff=True)
++        self.plain = User.objects.create_user("guest", password="x")
++
++    def rpc(self, method, data, user=None, secret=True):
++        body = {"user": str((user or self.staff).pk), "method": method, "data": data}
++        extra = SECRET if secret else {}
++        return self.client.post("/centrifugo/rpc/", json.dumps(body), content_type="application/json", **extra)
++
++    def test_each_method(self):
++        cases = (
++            ("ids:confirm_incident", "confirmed"),
++            ("ids:false_positive_incident", "false_positive"),
++            ("ids:resolve_incident", "resolved"),
++        )
++        for method, status in cases:
++            inc = make_incident()
++            out = self.rpc(method, {"incident_id": inc.pk}).json()
++            self.assertEqual(out, {"result": {"data": {"incident_id": inc.pk, "status": status}}})
++            inc.delete()
++
++    def test_non_staff_denied_and_nothing_changes(self):
++        inc = make_incident()
++        out = self.rpc("ids:confirm_incident", {"incident_id": inc.pk}, user=self.plain).json()
++        self.assertEqual(out["error"]["code"], 403)
++        inc.refresh_from_db()
++        self.assertEqual(inc.status, Incident.Status.NEW)
++        self.assertFalse(AuditLog.objects.filter(verb="confirm_incident").exists())
++
++    def test_proxy_secret_required(self):
++        inc = make_incident()
++        resp = self.rpc("ids:confirm_incident", {"incident_id": inc.pk}, secret=False)
++        self.assertEqual(resp.status_code, 403)
++        inc.refresh_from_db()
++        self.assertEqual(inc.status, Incident.Status.NEW)
++
++    def test_bad_ids_are_400(self):
++        for bad in (None, "", "abc", "-1", "1.5", "9" * 30, True, [1]):
++            out = self.rpc("ids:resolve_incident", {"incident_id": bad}).json()
++            self.assertEqual(out["error"]["code"], 400, bad)
++        self.assertEqual(self.rpc("ids:resolve_incident", {}).json()["error"]["code"], 400)
++
++    def test_missing_and_closed(self):
++        self.assertEqual(self.rpc("ids:confirm_incident", {"incident_id": 424242}).json()["error"]["code"], 404)
++        inc = make_incident(Incident.Status.RESOLVED)
++        self.assertEqual(self.rpc("ids:confirm_incident", {"incident_id": inc.pk}).json()["error"]["code"], 409)
++
++    def test_action_rpc_still_works_and_actions_untouched(self):
++        # Incident kararı bekleyen eylemlere dokunmaz.
++        from . import actions
++        from .models import Action, Event
++        inc = make_incident()
++        ev = Event.objects.create(source_ip=inc.source_ip, attack_type="brute_force", risk_score=0.9,
++                                  risk_level="high", incident=inc)
++        action = actions.propose_action(ev, "block_ip", inc.source_ip)
++        self.rpc("ids:false_positive_incident", {"incident_id": inc.pk})
++        action.refresh_from_db()
++        self.assertEqual(action.status, Action.Status.PENDING_APPROVAL)
++        out = self.rpc("ids:approve_action", {"action_id": action.pk}).json()
++        self.assertEqual(out["result"]["data"]["status"], "executed")
+diff --git a/backend/core/views_centrifugo.py b/backend/core/views_centrifugo.py
+index f0e61a8..2ba6c29 100644
+--- a/backend/core/views_centrifugo.py
++++ b/backend/core/views_centrifugo.py
+@@ -21,7 +21,7 @@ from django.http import JsonResponse
+ from django.views.decorators.csrf import csrf_exempt
+ from django.views.decorators.http import require_POST
+ 
+-from . import actions, realtime
++from . import actions, incident_detail, incidents, realtime
+ from .actions import ActionError
+ 
+ ALLOWED_CHANNELS = {
+@@ -37,6 +37,12 @@ RPC_METHODS = {
+     "ids:rollback_action": actions.rollback_by_user,
+ }
+ 
++INCIDENT_RPC = {
++    "ids:confirm_incident": "confirm",
++    "ids:false_positive_incident": "false_positive",
++    "ids:resolve_incident": "resolve",
++}
++
+ 
+ def _secret_ok(request):
+     expected = settings.RT_PROXY_SECRET
+@@ -119,11 +125,22 @@ def rpc(request, body):
+     if user is None:
+         return _err(403, "permission denied")
+ 
++    data = body.get("data") or {}
++    decision = INCIDENT_RPC.get(body.get("method"))
++    if decision is not None:
++        try:
++            incident_id = incident_detail.parse_id(str(data.get("incident_id", "")))
++            incident = incidents.decide(incident_id, user, decision)
++        except incident_detail.IncidentError:
++            return _err(400, "incident_id gerekli")
++        except incidents.DecisionError as exc:
++            return _err(exc.code, exc.message)
++        return JsonResponse({"result": {"data": {"incident_id": incident.pk, "status": incident.status}}})
++
+     handler = RPC_METHODS.get(body.get("method"))
+     if handler is None:
+         return _err(404, "method not found")
+ 
+-    data = body.get("data") or {}
+     try:
+         action = handler(int(data.get("action_id")), user)
+     except (TypeError, ValueError):

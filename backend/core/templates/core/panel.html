@@ -138,6 +138,8 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 .linkbtn:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 2px; }
 #source-card[hidden], #incd-card[hidden] { display: none; }
 #incd-title { outline: none; }
+.incd-btns { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
+.incd-btns:empty { display: none; }
 #source-title { outline: none; }
 .src-kpis { padding: 12px 12px 0; margin-bottom: 0; }
 .charts.one { grid-template-columns: 1fr; }
@@ -233,6 +235,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
       <div class="kpi"><div class="n" id="incd-span">—</div><div class="l">İlk / son görülme</div></div>
       <div class="kpi"><div class="n" id="incd-risk">—</div><div class="l">En yüksek risk</div></div>
     </div>
+    <div id="incd-btns" class="incd-btns" role="group" aria-label="Incident kararı"></div>
     <h3 class="sub">Ajan incelemeleri</h3>
     <ul id="incd-runs" class="flow"></ul>
     <div id="incd-runs-empty" class="empty" hidden>Henüz inceleme yok.</div>
@@ -400,12 +403,12 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     ingest: ['Sensör', 'info'], enqueue: ['Kuyruk', 'muted'], investigate: ['Agent', 'info'],
     propose: ['Politika', 'warn'], execute: ['Eylem', 'ok'], send: ['Bildirim', 'muted'],
     reject: ['Karar', 'muted'], rollback: ['Karar', 'info'], expire: ['Sistem', 'muted'],
-    open: ['Incident', 'info'], close: ['Incident', 'muted'],
+    open: ['Incident', 'info'], close: ['Incident', 'muted'], confirm: ['Karar', 'bad'],
   };
   const STEP_TONE = {
     created: 'ok', done: 'ok', sent: 'ok', executed: 'ok', rolled_back: 'ok', proposed: 'warn',
     refused: 'bad', failed: 'bad', skipped: 'muted', deduplicated: 'muted', expired: 'muted',
-    rejected: 'muted', dry_run: 'info',
+    rejected: 'muted', dry_run: 'info', confirmed: 'bad',
   };
   const FLOW_SHOW = 40;
   const FLOW_KEEP = 80;
@@ -415,7 +418,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     const i = verb.indexOf('_');
     if (i < 0) return [verb, ''];
     const head = verb.slice(0, i), rest = verb.slice(i + 1);
-    if (['send', 'ingest', 'enqueue', 'investigate', 'open', 'close'].includes(head)) return [head, rest];
+    if (['send', 'ingest', 'enqueue', 'investigate', 'open', 'close', 'confirm'].includes(head)) return [head, rest];
     return KIND_IDS.includes(rest) ? [head, rest] : [verb, ''];
   }
   function stepText(st) {
@@ -427,7 +430,8 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
       enqueue: { skipped: 'İnceleme kuyruğa alınmadı (aynı IP için görev zaten bekliyor)' },
       investigate: { done: 'Agent incelemeyi tamamladı', failed: 'Agent incelemesi başarısız' },
       open: { created: 'Incident açıldı' },
-      close: { resolved: 'Incident kapandı (uzun süredir olay yok)', false_positive: 'Incident yanlış alarm olarak kapandı' },
+      confirm: { confirmed: 'Incident gerçek saldırı olarak onaylandı' },
+      close: { resolved: 'Incident çözüldü', false_positive: 'Incident yanlış alarm olarak kapandı' },
       propose: {
         proposed: `${kind} önerildi`, refused: `${kind} önerisi korumalı hedef nedeniyle reddedildi`,
         deduplicated: `${kind} zaten var, tekrar açılmadı`,
@@ -564,6 +568,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
   }
 
   // ---- RPC (onay / red / geri alma) ----------------------------------------
+  const INC_METHODS = { confirm: 'ids:confirm_incident', false_positive: 'ids:false_positive_incident', resolve: 'ids:resolve_incident' };
   const METHODS = { approve: 'ids:approve_action', reject: 'ids:reject_action', rollback: 'ids:rollback_action' };
   let client = null;
 
@@ -1219,7 +1224,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     $('incd-events').textContent = '…';
     $('incd-span').textContent = '—';
     $('incd-risk').textContent = '—';
-    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body']) $(b).replaceChildren();
+    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body', 'incd-btns']) $(b).replaceChildren();
     incidentMessage('Yükleniyor…');
     const card = $('incd-card');
     card.hidden = false;
@@ -1237,6 +1242,57 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     $('incd-card').hidden = true;
   }
 
+  function incidentButton(label, cls, id, method, needConfirm) {
+    const key = method + ':i' + id;
+    const isArmed = (armed.get(key) || 0) > Date.now();
+    const b = el('button', { cls: 'btn ' + cls + (isArmed ? ' confirm' : ''), text: isArmed ? 'Emin misin? ' + label : label, attrs: { type: 'button' } });
+    if (busy.has(key)) b.disabled = true;
+    b.addEventListener('click', () => {
+      if (needConfirm && !((armed.get(key) || 0) > Date.now())) {
+        armed.set(key, Date.now() + CONFIRM_MS);
+        renderIncidentButtons();
+        setTimeout(renderIncidentButtons, CONFIRM_MS + 50);
+        return;
+      }
+      decideIncident(id, method);
+    });
+    return b;
+  }
+
+  function renderIncidentButtons() {
+    const box = $('incd-btns');
+    const inc = incidentData && incidentData.incident;
+    if (!inc || inc.id !== incidentId || !INC_OPEN.has(inc.status)) { box.replaceChildren(); return; }
+    const kids = [];
+    if (inc.status !== 'confirmed') kids.push(incidentButton('Saldırıyı onayla', 'approve', inc.id, INC_METHODS.confirm, false));
+    kids.push(incidentButton('Yanlış alarm', 'reject', inc.id, INC_METHODS.false_positive, true));
+    kids.push(incidentButton('Çöz', '', inc.id, INC_METHODS.resolve, true));
+    box.replaceChildren(...kids);
+  }
+
+  async function decideIncident(id, method) {
+    const key = method + ':i' + id;
+    armed.delete(key);
+    busy.add(key);
+    renderIncidentButtons();
+    try {
+      if (!client) throw new Error('canlı bağlantı yok');
+      const res = await client.rpc(method, { incident_id: id });
+      const d = res && res.data;
+      if (d && incidentsMap.has(d.incident_id)) {
+        incidentsMap.set(d.incident_id, Object.assign({}, incidentsMap.get(d.incident_id), { status: d.status }));
+      }
+      toast(`Incident #${id}: ${(INCSTATUS[d && d.status] || [d && d.status || 'tamam'])[0]}`, 'ok');
+    } catch (e) {
+      toast(`Incident #${id}: ${e.message || 'hata'}${e.code ? ' (' + e.code + ')' : ''}`, 'bad');
+    } finally {
+      busy.delete(key);
+      scheduleIncidents();
+      if (incidentId === id) loadIncidentDetail();
+      renderIncidentButtons();
+    }
+  }
+
   function renderIncidentDetail() {
     const d = incidentData;
     if (!d || !incidentId) return;
@@ -1248,6 +1304,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     $('incd-events').textContent = String(inc.event_count);
     $('incd-span').textContent = `${fmtTime(inc.first_seen)} – ${fmtTime(inc.last_seen)}`;
     $('incd-risk').textContent = Number(inc.max_risk).toFixed(2);
+    renderIncidentButtons();
 
     $('incd-runs-empty').hidden = d.runs.length > 0;
     $('incd-runs').replaceChildren(...d.runs.map((r) => {
