@@ -19,7 +19,7 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -81,6 +81,25 @@ def _active_action(kind, target):
     return pending.first() or executed.first() or dry.first()
 
 
+def _lock_target(kind, target):
+    """Aynı (tür, hedef) için önerileri sıraya sokar; kilit işlem bitince (commit/rollback) kalkar.
+
+    Tekrar önleme zamana bağlı koşullara bakar (onay süresi, etki süresi, kuru çalıştırma
+    penceresi), bu yüzden veritabanı benzersizlik kısıtıyla ifade edilemez. Kısıt, süresi dolmuş
+    ama henüz kapatılmamış bir kaydı yeni öneriyi engelleyen bir "hayalet" yapardı. Bunun yerine
+    kontrol ile oluşturma arasını PostgreSQL danışma kilidiyle (advisory lock) seri hale getiririz:
+    ikinci işlem kilidi bekler, açılınca birincinin commit ettiği eylemi görür ve yenisini açmaz.
+    Farklı hedefler farklı kilit alır, birbirini beklemez. Postgres dışında (testlerdeki sqlite)
+    işlemler zaten tek yazıcıdır, kilit gerekmez.
+    """
+    if connection.vendor != "postgresql":
+        return
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", [f"propose:{kind}:{target}"]
+        )
+
+
 @transaction.atomic
 def propose_action(event, kind, target, params=None, proposed_by="agent"):
     params = dict(params or {})
@@ -116,6 +135,7 @@ def propose_action(event, kind, target, params=None, proposed_by="agent"):
     # Sensör aynı saldırgan için her pencerede yeni olay üretir. Hedefte zaten geçerli bir
     # önlem (veya onay bekleyen öneri) varsa ikincisini açmayız.
     if kind in PROTECTABLE_KINDS:
+        _lock_target(kind, target)
         existing = _active_action(kind, target)
         if existing is not None:
             audit.record(proposed_by, f"propose_{kind}", target, "deduplicated",

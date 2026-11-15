@@ -101,6 +101,9 @@ pip install -r requirements.txt
 python manage.py test --settings=config.settings_test   # 61 test, Postgres gerekmez
 ```
 
+Eşzamanlı öneri yarışının testi (`core/tests_concurrency.py`, 2 test) yalnızca PostgreSQL'de çalışır, sqlite'ta
+atlanır: `docker compose exec backend python manage.py test core.tests_concurrency`.
+
 ## Doğrulananlar ve doğrulanmayanlar
 
 Gerçek Centrifugo 6.9.7 + PostgreSQL + Procrastinate worker + Chromium ile uçtan uca denendi:

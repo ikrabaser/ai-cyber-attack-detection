@@ -139,7 +139,7 @@ Normal istemci (`192.168.56.50`) hiç işaretlenmez; 12:00:30'daki uzun meşru S
 `propose_action` artık `block_ip` / `isolate_host` için hedefte **geçerli bir eylem** (bekleyen öneri,
 süresi dolmamış önlem, TTL penceresindeki kuru çalıştırma) varsa yenisini açmaz, mevcut olanı döndürür ve
 denetim kaydına `deduplicated` yazar. Örnek senaryoda 7 olay → panelde **tek** onay bekleyen engel.
-Bilinen sınır: iki istek tam aynı anda gelirse veritabanı kısıtı olmadığı için çift kayıt mümkün.
+İki olay aynı anda işlenirse (birden fazla worker) PostgreSQL danışma kilidi, aynı hedef için tek eylem açılmasını sağlar (`core.actions._lock_target`).
 
 ## Dosyalar
 
