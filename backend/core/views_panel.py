@@ -21,7 +21,7 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
-from . import event_filters, realtime, stats
+from . import event_filters, realtime, source_detail, stats
 from .models import Action, Event
 
 SNAPSHOT_EVENTS = 50
@@ -141,6 +141,7 @@ def panel(request):
             "snapshotUrl": "/panel/api/snapshot/",
             "statsUrl": "/panel/api/stats/",
             "eventsUrl": "/panel/api/events/",
+            "sourceUrl": "/panel/api/source/",
             "channels": [realtime.CHANNEL_FEED, realtime.CHANNEL_ACTIONS],
         },
     }
@@ -194,5 +195,18 @@ def events_view(request):
             "limit": event_filters.LIMIT,
         }
     )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@require_GET
+@_staff_json
+def source_view(request):
+    """Bir kaynak IP'nin zaman çizelgesi: özet, olaylar (eskiden yeniye), eşikler, ilgili eylemler."""
+    try:
+        data = source_detail.build_source(request.GET.get("ip"))
+    except source_detail.SourceError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    response = JsonResponse(data)
     response["Cache-Control"] = "no-store"
     return response

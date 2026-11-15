@@ -83,6 +83,11 @@ Tek sayfa, Django'dan servis edilir. Açılınca son olaylar/eylemler yüklenir,
   ve zaman aralığı; birlikte çalışır. Sorgu `GET /panel/api/events/` ile sunucuda, tüm geçmiş üzerinden yapılır
   (en yeni 100 satır gösterilir, eşleşen toplam yazılır). Filtre açıkken canlı gelen olay aynı kurala göre eşlenir.
   Parametreler sıkı doğrulanır (IP önekinde LIKE jokeri geçmez, geçersiz değer 400 döner).
+- **Kaynak ayrıntısı (zaman çizelgesi):** tablolardaki ve "En çok olay üreten kaynaklar" grafiğindeki IP'lere tıklayınca
+  o kaynağın kartı açılır (`GET /panel/api/source/?ip=`): olay sayısı, ilk/son görülme, en yüksek risk, riskin
+  zamana göre grafiği (olay/orta/yüksek eşikleri kesikli çizgiyle), olaylar ve o IP'yle ilgili eylemler. Israr
+  bonusunun risk basamaklarını bu grafikte görebilirsin. Kart açıkken ilgili yeni olay gelince yenilenir; Esc veya
+  Kapat ile kapanır. IP sunucuda `ipaddress` ile doğrulanır; olayın ham `features` alanı hiçbir zaman gönderilmez.
 - İstemci kütüphaneleri (`centrifuge-js 5.7.4`, `chart.js 4.6.1`) depodaki `backend/core/vendor/` altından, kendi
   sunucundan gelir (CDN yok, internet gerekmez, CSP'de dış script kaynağı yok). Bütünlük (SRI) hash'leri tarayıcıda
   kontrol edilir (testler hash'leri dosyalarla karşılaştırır); yüklenemezse panel bunu bir uyarıyla bildirir.
@@ -127,7 +132,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 103 test (+2 atlanır), Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 117 test (+2 atlanır), Postgres gerekmez
 ```
 
 Eşzamanlı öneri yarışının testi (`core/tests_concurrency.py`, 2 test) yalnızca PostgreSQL'de çalışır, sqlite'ta

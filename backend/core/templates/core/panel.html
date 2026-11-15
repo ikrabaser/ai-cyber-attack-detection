@@ -130,6 +130,18 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 .filters .btn[hidden] { display: none; }
 .filters-msg { padding: 6px 14px; color: var(--bad); font-size: 12px; }
 .filters-msg[hidden] { display: none; }
+.linkbtn {
+  font: inherit; color: var(--info); background: none; border: 0; padding: 0; cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.linkbtn:hover { text-decoration: underline; }
+.linkbtn:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 2px; }
+#source-card[hidden] { display: none; }
+#source-title { outline: none; }
+.src-kpis { padding: 12px 12px 0; margin-bottom: 0; }
+.charts.one { grid-template-columns: 1fr; }
+.cv.tall { height: 300px; }
+.sub { margin: 0; padding: 10px 14px; font-size: 13px; color: var(--muted); font-weight: 500; border-top: 1px solid var(--line); }
 .cv { position: relative; height: 220px; }
 .cv-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }
 .cv-empty[hidden] { display: none; }
@@ -191,6 +203,41 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
         <div class="cv"><canvas id="ch-actions" role="img" aria-label="Eylemlerin durumlarına göre sayısı"></canvas><p class="cv-empty" id="ch-actions-empty" hidden>Bu aralıkta eylem yok</p></div>
       </figure>
     </div>
+  </section>
+
+  <section class="card" id="source-card" aria-labelledby="source-title" hidden>
+    <h2>
+      <span><span id="source-title" tabindex="-1">Kaynak</span> <small id="source-flags"></small></span>
+      <button type="button" class="btn small" id="source-close">Kapat</button>
+    </h2>
+    <div id="source-msg" class="empty" role="status" hidden></div>
+    <div class="kpis src-kpis">
+      <div class="kpi"><div class="n" id="src-events">0</div><div class="l">Olay</div></div>
+      <div class="kpi"><div class="n" id="src-first">—</div><div class="l">İlk görülme</div></div>
+      <div class="kpi"><div class="n" id="src-last">—</div><div class="l">Son görülme</div></div>
+      <div class="kpi"><div class="n" id="src-risk">—</div><div class="l">En yüksek risk</div></div>
+    </div>
+    <div class="charts one">
+      <figure class="chartbox">
+        <figcaption id="src-caption">Zamana göre risk (kesikli çizgiler eşikler)</figcaption>
+        <div class="cv tall"><canvas id="ch-source" role="img" aria-label="Kaynağın zamana göre risk skoru"></canvas><p class="cv-empty" id="ch-source-empty" hidden>Bu kaynak için olay yok</p></div>
+      </figure>
+    </div>
+    <h3 class="sub">Olaylar</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Zaman</th><th>Saldırı türü</th><th>Risk</th><th>Düzey</th><th>Durum</th><th>Özet</th></tr></thead>
+        <tbody id="src-events-body"></tbody>
+      </table>
+    </div>
+    <h3 class="sub">Bu kaynakla ilgili eylemler</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Tür</th><th>Hedef</th><th>Durum</th><th>Oluşturuldu</th><th>Etki bitişi</th></tr></thead>
+        <tbody id="src-actions-body"></tbody>
+      </table>
+    </div>
+    <div id="src-actions-empty" class="empty" hidden>Bu kaynak için eylem yok.</div>
   </section>
 
   <section class="card">
@@ -347,6 +394,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     else return;
     scheduleRender();
     scheduleStats();
+    if (sourceIp && (data.source_ip === sourceIp || data.target === sourceIp)) scheduleSource();
   }
 
   let snapBusy = false;
@@ -451,7 +499,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
         meta.append(`Olay #${a.event_id ?? '—'} · kalan `, timer(a.approval_deadline));
         if (a.ttl_seconds) meta.append(` · engel süresi ${Math.round(a.ttl_seconds / 60)} dk`);
         list.append(el('div', { cls: 'pcard' },
-          el('div', { cls: 't' }, document.createTextNode(`${KIND[a.kind] || a.kind}: `), el('span', { cls: 'mono', text: a.target })),
+          el('div', { cls: 't' }, document.createTextNode(`${KIND[a.kind] || a.kind}: `), a.kind === 'block_ip' ? ipLink(a.target) : el('span', { cls: 'mono', text: a.target })),
           meta,
           el('div', { cls: 'btns' },
             actionButton('Onayla', 'approve', a.id, METHODS.approve, risky),
@@ -468,7 +516,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
       return el('tr', {},
         el('td', { cls: 'mono', text: a.id }),
         el('td', { text: KIND[a.kind] || a.kind }),
-        el('td', { cls: 'mono', text: a.target }),
+        el('td', {}, a.kind === 'block_ip' ? ipLink(a.target) : el('span', { cls: 'mono', text: a.target })),
         el('td', {}, chip(STATUS[a.status], a.status)),
         el('td', {}, until ? timer(until) : el('span', { cls: 'muted', text: '—' })),
         el('td', { cls: 'mono', text: a.event_id != null ? '#' + a.event_id : '—' }),
@@ -493,7 +541,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
       return el('tr', {},
         el('td', { cls: 'mono', text: e.id }),
         el('td', { text: fmtTime(e.created_at) }),
-        el('td', { cls: 'mono', text: e.source_ip }),
+        el('td', {}, ipLink(e.source_ip)),
         el('td', { text: e.target_host || '—' }),
         el('td', { text: e.attack_type }),
         el('td', {}, el('span', { cls: 'risk' }, el('span', { cls: 'bar ' + tone }, fill), el('b', { cls: 'mono', text: risk.toFixed(2) }))),
@@ -501,6 +549,187 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
         el('td', { text: EVSTATUS[e.status] || e.status }),
         el('td', { cls: 'wrap-cell', text: e.summary || '', title: e.summary || '' }));
     }));
+  }
+
+  // ---- Kaynak ayrıntısı (zaman çizelgesi) -------------------------------------
+  let sourceIp = '';
+  let sourceData = null;
+  let sourceSeq = 0;
+  let sourceTimer = 0;
+  const SOURCE_DEBOUNCE_MS = 2000;
+  const fmtDateTime = (iso) => {
+    const d = new Date(iso);
+    return isNaN(d) ? '—' : d.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  };
+
+  // Tıklanabilir IP: metin yalnızca textContent ile basılır.
+  function ipLink(ip) {
+    const b = el('button', { cls: 'linkbtn mono', text: ip, title: 'Bu kaynağın zaman çizelgesini aç', attrs: { type: 'button' } });
+    b.addEventListener('click', () => openSource(ip));
+    return b;
+  }
+
+  function sourceMessage(text) {
+    const box = $('source-msg');
+    box.textContent = text || '';
+    box.hidden = !text;
+  }
+
+  async function loadSource() {
+    const ip = sourceIp;
+    if (!ip) return;
+    const seq = ++sourceSeq;
+    try {
+      const r = await fetch(`${cfg.sourceUrl}?ip=${encodeURIComponent(ip)}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (r.status === 403) return; // oturum sorununu anlık görüntü isteği zaten bildirir
+      if (r.status === 400) { const d = await r.json(); throw new Error(d.error || 'geçersiz IP'); }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      if (seq !== sourceSeq || ip !== sourceIp) return; // araya başka bir kaynak girdi
+      sourceData = d;
+      sourceMessage('');
+      renderSource();
+    } catch (err) {
+      if (seq === sourceSeq) sourceMessage('Kaynak ayrıntısı alınamadı: ' + err.message);
+    }
+  }
+
+  function scheduleSource() {
+    if (sourceTimer) return;
+    sourceTimer = setTimeout(() => { sourceTimer = 0; loadSource(); }, SOURCE_DEBOUNCE_MS);
+  }
+
+  function openSource(ip) {
+    sourceIp = String(ip);
+    sourceData = null;
+    sourceSeq += 1;
+    if (charts.source) { charts.source.destroy(); delete charts.source; }
+    $('source-title').textContent = 'Kaynak ' + sourceIp;
+    $('source-flags').textContent = '';
+    $('src-events').textContent = '…';
+    for (const id of ['src-first', 'src-last', 'src-risk']) $(id).textContent = '—';
+    $('src-events-body').replaceChildren();
+    $('src-actions-body').replaceChildren();
+    $('ch-source-empty').hidden = true;
+    sourceMessage('Yükleniyor…');
+    const card = $('source-card');
+    card.hidden = false;
+    card.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    $('source-title').focus({ preventScroll: true });
+    loadSource();
+  }
+
+  function closeSource() {
+    sourceIp = '';
+    sourceData = null;
+    sourceSeq += 1;
+    clearTimeout(sourceTimer);
+    sourceTimer = 0;
+    if (charts.source) { charts.source.destroy(); delete charts.source; }
+    $('source-card').hidden = true;
+  }
+
+  function buildSourceChart(d) {
+    const c = palette();
+    const levelColor = { low: c.info, medium: c.warn, high: c.bad };
+    const pts = d.events.map((e) => ({ x: Date.parse(e.created_at), y: e.risk_score }));
+    let lo = Math.min(...pts.map((p) => p.x));
+    let hi = Math.max(...pts.map((p) => p.x));
+    if (lo === hi) { lo -= 60000; hi += 60000; }
+    const pad = (hi - lo) * 0.03;
+    lo -= pad; hi += pad;
+    const longSpan = hi - lo > 36 * 3600e3;
+    const tick = (v) => new Date(v).toLocaleString('tr-TR', longSpan
+      ? { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }
+      : { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const line = (label, y, color) => ({
+      label, data: [{ x: lo, y }, { x: hi, y }], showLine: true, pointRadius: 0,
+      borderDash: [6, 4], borderWidth: 1, borderColor: color, backgroundColor: color, pointHitRadius: 0,
+    });
+    const th = d.thresholds;
+    charts.source = new Chart($('ch-source'), {
+      type: 'scatter',
+      data: {
+        datasets: [
+          {
+            label: 'Risk', data: pts, showLine: true, borderWidth: 1, borderColor: c.text,
+            pointRadius: 4, pointHoverRadius: 6,
+            pointBackgroundColor: d.events.map((e) => levelColor[e.risk_level] || c.text),
+            pointBorderColor: d.events.map((e) => levelColor[e.risk_level] || c.text),
+          },
+          line(`olay eşiği ${th.low}`, th.low, c.info),
+          line(`orta ${th.medium}`, th.medium, c.warn),
+          line(`yüksek ${th.high}`, th.high, c.bad),
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: {
+          legend: { labels: { color: c.text, boxWidth: 18, filter: (item) => item.datasetIndex !== 0 } },
+          tooltip: {
+            filter: (item) => item.datasetIndex === 0,
+            callbacks: {
+              title: (items) => (items.length ? fmtDateTime(items[0].parsed.x) : ''),
+              label: (item) => {
+                const e = d.events[item.dataIndex];
+                return `risk ${Number(item.parsed.y).toFixed(2)} · ${e ? e.attack_type : ''}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: { type: 'linear', min: lo, max: hi, ticks: { color: c.text, maxTicksLimit: 6, maxRotation: 0, callback: tick }, grid: { color: c.grid }, border: { color: c.grid } },
+          y: { min: 0, max: 1, ticks: { color: c.text, stepSize: 0.1 }, grid: { color: c.grid }, border: { color: c.grid } },
+        },
+      },
+    });
+  }
+
+  function renderSource() {
+    const d = sourceData;
+    if (!d || !sourceIp) return;
+    const t = d.totals;
+    $('src-events').textContent = String(t.events);
+    $('src-first').textContent = t.first_seen ? fmtDateTime(t.first_seen) : '—';
+    $('src-last').textContent = t.last_seen ? fmtDateTime(t.last_seen) : '—';
+    $('src-risk').textContent = t.max_risk == null ? '—' : Number(t.max_risk).toFixed(2);
+    $('source-flags').textContent = d.protected ? '· korumalı IP, engellenmez' : '';
+    $('src-caption').textContent = d.events_truncated
+      ? `Zamana göre risk, en yeni ${d.events.length} olay (toplam ${t.events}); kesikli çizgiler eşikler`
+      : 'Zamana göre risk (kesikli çizgiler eşikler)';
+
+    const none = d.events.length === 0;
+    $('ch-source-empty').hidden = !none;
+    if (charts.source) { charts.source.destroy(); delete charts.source; }
+    if (!none && typeof Chart !== 'undefined') buildSourceChart(d);
+    $('ch-source').setAttribute('aria-label', `${d.ip} kaynağının zamana göre risk skoru, ${t.events} olay`);
+
+    // Olaylar: en yeni üstte
+    $('src-events-body').replaceChildren(...d.events.slice().reverse().map((e) => {
+      const lv = LEVEL[e.risk_level];
+      return el('tr', {},
+        el('td', { cls: 'mono', text: e.id }),
+        el('td', { text: fmtDateTime(e.created_at) }),
+        el('td', { text: e.attack_type }),
+        el('td', { cls: 'mono', text: Math.max(0, Math.min(1, Number(e.risk_score) || 0)).toFixed(2) }),
+        el('td', {}, chip(lv, e.risk_level)),
+        el('td', { text: EVSTATUS[e.status] || e.status }),
+        el('td', { cls: 'wrap-cell', text: e.summary || '', title: e.summary || '' }));
+    }));
+
+    $('src-actions-empty').hidden = d.actions.length > 0;
+    $('src-actions-body').replaceChildren(...d.actions.map((a) => el('tr', {},
+      el('td', { cls: 'mono', text: a.id }),
+      el('td', { text: KIND[a.kind] || a.kind }),
+      el('td', { cls: 'mono', text: a.target }),
+      el('td', {}, chip(STATUS[a.status], a.status)),
+      el('td', { text: fmtDateTime(a.created_at) }),
+      el('td', { text: a.effect_expires_at ? fmtDateTime(a.effect_expires_at) : '—' }))));
+  }
+
+  function initSource() {
+    $('source-close').addEventListener('click', closeSource);
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && sourceIp) closeSource(); });
   }
 
   // ---- Olay filtreleri -------------------------------------------------------
@@ -631,14 +860,14 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     const base = { responsive: true, maintainAspectRatio: false, animation: false };
     const countAxis = { beginAtZero: true, ticks: { color: c.text, precision: 0 }, grid: { color: c.grid }, border: { color: c.grid } };
     const nameAxis = { ticks: { color: c.text }, grid: { display: false }, border: { color: c.grid } };
-    const hbar = (id, extraPlugins) => new Chart($(id), {
+    const hbar = (id, extraPlugins, extraOptions) => new Chart($(id), {
       type: 'bar',
       data: { labels: [], datasets: [{ data: [], backgroundColor: c.info, maxBarThickness: 22 }] },
       options: Object.assign({}, base, {
         indexAxis: 'y',
         plugins: Object.assign({ legend: { display: false } }, extraPlugins),
         scales: { x: countAxis, y: nameAxis },
-      }),
+      }, extraOptions),
     });
 
     charts.timeline = new Chart($('ch-timeline'), {
@@ -664,8 +893,14 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     charts.sources = hbar('ch-sources', {
       tooltip: { callbacks: { afterLabel: (ctx) => {
         const row = statsData && statsData.top_sources[ctx.dataIndex];
-        return row ? `en yüksek risk ${Number(row.max_risk).toFixed(2)}` : '';
+        return row ? `en yüksek risk ${Number(row.max_risk).toFixed(2)} · ayrıntı için tıkla` : '';
       } } },
+    }, {
+      onClick: (evt, hits) => {
+        const row = hits.length && statsData && statsData.top_sources[hits[0].index];
+        if (row) openSource(row.ip);
+      },
+      onHover: (evt, hits) => { evt.native.target.style.cursor = hits.length ? 'pointer' : 'default'; },
     });
     charts.actions = hbar('ch-actions');
   }
@@ -753,7 +988,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     }
     // Açık/koyu tema değişince renkler yeniden okunur.
     const mq = window.matchMedia('(prefers-color-scheme: light)');
-    const retheme = () => { destroyCharts(); renderStats(); };
+    const retheme = () => { destroyCharts(); renderStats(); renderSource(); };
     if (mq.addEventListener) mq.addEventListener('change', retheme);
     setInterval(loadStats, STATS_REFRESH_MS);
     loadStats();
@@ -769,6 +1004,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     render();
     loadSnapshot();
     initFilters();
+    initSource();
     initStats();
     if (typeof Centrifuge === 'undefined') {
       setConn('bad', 'Canlı bağlantı yok');
