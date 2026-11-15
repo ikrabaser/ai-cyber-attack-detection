@@ -21,7 +21,7 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
-from . import realtime
+from . import realtime, stats
 from .models import Action, Event
 
 SNAPSHOT_EVENTS = 50
@@ -34,6 +34,12 @@ CENTRIFUGE_VERSION = "5.7.4"
 CENTRIFUGE_FILE = Path(__file__).resolve().parent / "vendor" / f"centrifuge-{CENTRIFUGE_VERSION}.js"
 CENTRIFUGE_URL = f"/panel/vendor/centrifuge-{CENTRIFUGE_VERSION}.js"
 CENTRIFUGE_SRI = "sha384-Iz2tPn0Bdkrz7y4HN3TY1XBlxpW+TjRqSbTJc2ENckVFOGn9tDUNezcC3CF5pO+h"
+
+# Grafikler için Chart.js, aynı yöntemle (npm paketinin `dist/chart.umd.js`'i, MIT lisanslı).
+CHART_VERSION = "4.6.1"
+CHART_FILE = Path(__file__).resolve().parent / "vendor" / f"chart-{CHART_VERSION}.umd.js"
+CHART_URL = f"/panel/vendor/chart-{CHART_VERSION}.umd.js"
+CHART_SRI = "sha384-lm7tNiW/3uF4tLujoEeoR94zIODe3hCWqRtW0UgxpQE3QslzOhlD22UqQk1tSBhB"
 
 MODE_LABELS = {
     "advise": "Öneri modu: hiçbir şey otomatik yapılmaz",
@@ -89,21 +95,30 @@ def _csp(nonce, ws_url):
     )
 
 
-@lru_cache(maxsize=1)
-def _centrifuge_bytes():
-    return CENTRIFUGE_FILE.read_bytes()
+@lru_cache(maxsize=4)
+def _vendor_bytes(path):
+    return path.read_bytes()
+
+
+def _serve_vendor(path, name):
+    """Vendored kütüphane dosyası. Herkese açık bir kütüphane kodudur; panel verisi içermez."""
+    try:
+        body = _vendor_bytes(path)
+    except OSError:
+        raise Http404(f"{name} dosyası bulunamadı")
+    response = HttpResponse(body, content_type="text/javascript; charset=utf-8")
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 @require_GET
 def centrifuge_js(request):
-    """Vendored centrifuge-js. Herkese açık bir kütüphane dosyası; panel verisi içermez."""
-    try:
-        body = _centrifuge_bytes()
-    except OSError:
-        raise Http404("centrifuge-js dosyası bulunamadı")
-    response = HttpResponse(body, content_type="text/javascript; charset=utf-8")
-    response["Cache-Control"] = "public, max-age=86400"
-    return response
+    return _serve_vendor(CENTRIFUGE_FILE, "centrifuge-js")
+
+
+@require_GET
+def chart_js(request):
+    return _serve_vendor(CHART_FILE, "chart.js")
 
 
 @require_GET
@@ -116,12 +131,15 @@ def panel(request):
         "csp_nonce": nonce,
         "centrifuge_src": CENTRIFUGE_URL,
         "centrifuge_sri": CENTRIFUGE_SRI,
+        "chart_src": CHART_URL,
+        "chart_sri": CHART_SRI,
         "mode": mode,
         "mode_label": MODE_LABELS.get(mode, mode),
         "username": request.user.get_username(),
         "config": {
             "wsUrl": ws_url,
             "snapshotUrl": "/panel/api/snapshot/",
+            "statsUrl": "/panel/api/stats/",
             "channels": [realtime.CHANNEL_FEED, realtime.CHANNEL_ACTIONS],
         },
     }
@@ -142,5 +160,17 @@ def snapshot(request):
             "actions": [realtime.action_payload(a) for a in actions],
         }
     )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@require_GET
+@_staff_json
+def stats_view(request):
+    """Grafikler için özet sayılar. Yalnızca sayı ve kısa etiket döner; özet/özellik alanları yok."""
+    range_key = request.GET.get("range", stats.DEFAULT_RANGE)
+    if range_key not in stats.RANGES:
+        return JsonResponse({"error": "geçersiz aralık"}, status=400)
+    response = JsonResponse(stats.build_stats(range_key))
     response["Cache-Control"] = "no-store"
     return response

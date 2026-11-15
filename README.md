@@ -75,9 +75,14 @@ Tek sayfa, Django'dan servis edilir. Açılınca son olaylar/eylemler yüklenir,
   yine doğrulanmış `is_staff` oturumundan ve `core.actions` politika katmanından geçer.
 - Olay alanları saldırgan kontrolünde olabileceği için yalnızca `textContent` ile basılır; sayfa
   nonce'lu sıkı bir CSP ile gelir (dış bağlantı yalnızca Centrifugo).
-- İstemci kütüphanesi (`centrifuge-js 5.7.4`) depodaki `backend/core/vendor/` altından, kendi sunucundan
-  gelir (CDN yok, internet gerekmez, CSP'de dış script kaynağı yok). Bütünlük (SRI) hash'i tarayıcıda
-  kontrol edilir; yüklenemezse panel bunu bir uyarıyla bildirir.
+- **Genel görünüm** bölümünde 1 saat / 24 saat / 7 gün için grafikler: zamana göre olaylar (düzeye göre),
+  saldırı türleri, en çok olay üreten kaynaklar ve eylem durumları. Veri `GET /panel/api/stats/?range=1h|24h|7d`
+  uç noktasından gelir (yalnızca `is_staff`; sadece sayı ve kısa etiket döner, olay özeti/özellikleri dönmez).
+  Canlı olay geldikçe en fazla birkaç saniyede bir, ayrıca dakikada bir yenilenir.
+- İstemci kütüphaneleri (`centrifuge-js 5.7.4`, `chart.js 4.6.1`) depodaki `backend/core/vendor/` altından, kendi
+  sunucundan gelir (CDN yok, internet gerekmez, CSP'de dış script kaynağı yok). Bütünlük (SRI) hash'leri tarayıcıda
+  kontrol edilir (testler hash'leri dosyalarla karşılaştırır); yüklenemezse panel bunu bir uyarıyla bildirir.
+  Chart.js canvas'a çizer, etiketleri HTML olarak ayrıştırmaz.
 - İsteğe bağlı ortam değişkenleri: `RT_SESSION_TTL_SECONDS` (varsayılan 300; oturum iptalinin
   bağlantıyı kapatma süresi), `RT_PUBLIC_PORT` (8001), `RT_WS_URL` (boşsa sayfanın ana makine adından türetilir).
 
@@ -118,7 +123,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 71 test, Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 88 test (+2 atlanır), Postgres gerekmez
 ```
 
 Eşzamanlı öneri yarışının testi (`core/tests_concurrency.py`, 2 test) yalnızca PostgreSQL'de çalışır, sqlite'ta

@@ -113,6 +113,16 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 .toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--info); border-radius: 8px; padding: 8px 12px; box-shadow: 0 6px 20px rgb(0 0 0 / .25); }
 .toast.ok { border-left-color: var(--ok); } .toast.bad { border-left-color: var(--bad); }
 
+.seg { display: inline-flex; gap: 6px; }
+.btn.small { padding: 2px 10px; font-size: 12px; }
+.btn.active { border-color: var(--info); color: var(--info); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); gap: 12px; padding: 12px; }
+.chartbox { margin: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.chartbox figcaption { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.cv { position: relative; height: 220px; }
+.cv-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }
+.cv-empty[hidden] { display: none; }
+
 @media (max-width: 640px) {
   header.top h1 { flex-basis: 100%; }
   th, td { padding: 8px 10px; }
@@ -143,6 +153,36 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
   </section>
 
   <section class="card">
+    <h2>
+      <span>Genel görünüm <small id="stats-sub"></small></span>
+      <span class="seg" role="group" aria-label="Zaman aralığı">
+        <button type="button" class="btn small" data-range="1h" aria-pressed="false">1 saat</button>
+        <button type="button" class="btn small active" data-range="24h" aria-pressed="true">24 saat</button>
+        <button type="button" class="btn small" data-range="7d" aria-pressed="false">7 gün</button>
+      </span>
+    </h2>
+    <div id="stats-msg" class="empty" role="status" hidden></div>
+    <div class="charts">
+      <figure class="chartbox">
+        <figcaption>Zamana göre olaylar (düzeye göre)</figcaption>
+        <div class="cv"><canvas id="ch-timeline" role="img" aria-label="Zamana göre olaylar"></canvas><p class="cv-empty" id="ch-timeline-empty" hidden>Bu aralıkta olay yok</p></div>
+      </figure>
+      <figure class="chartbox">
+        <figcaption>Saldırı türleri</figcaption>
+        <div class="cv"><canvas id="ch-types" role="img" aria-label="Saldırı türlerine göre olay sayısı"></canvas><p class="cv-empty" id="ch-types-empty" hidden>Bu aralıkta olay yok</p></div>
+      </figure>
+      <figure class="chartbox">
+        <figcaption>En çok olay üreten kaynaklar (renk: en yüksek risk)</figcaption>
+        <div class="cv"><canvas id="ch-sources" role="img" aria-label="En çok olay üreten kaynak IP'ler"></canvas><p class="cv-empty" id="ch-sources-empty" hidden>Bu aralıkta olay yok</p></div>
+      </figure>
+      <figure class="chartbox">
+        <figcaption>Eylem durumları</figcaption>
+        <div class="cv"><canvas id="ch-actions" role="img" aria-label="Eylemlerin durumlarına göre sayısı"></canvas><p class="cv-empty" id="ch-actions-empty" hidden>Bu aralıkta eylem yok</p></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="card">
     <h2>Eylemler <small id="actions-count"></small></h2>
     <div class="table-wrap">
       <table>
@@ -168,6 +208,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 
 {{ config|json_script:"panel-config" }}
 <script nonce="{{ csp_nonce }}" src="{{ centrifuge_src }}" integrity="{{ centrifuge_sri }}"></script>
+<script nonce="{{ csp_nonce }}" src="{{ chart_src }}" integrity="{{ chart_sri }}"></script>
 <script nonce="{{ csp_nonce }}" id="panel-js">
 {% verbatim %}
 (() => {
@@ -262,6 +303,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     else if (data.type === 'action') { upsert(actions, data); live.set('a:' + data.id, Date.now()); }
     else return;
     scheduleRender();
+    scheduleStats();
   }
 
   let snapBusy = false;
@@ -412,6 +454,165 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     }));
   }
 
+  // ---- Grafikler -------------------------------------------------------------
+  // Chart.js canvas'a çizer; etiketler (saldırı türü, IP) HTML olarak ayrıştırılmaz.
+  const RANGE_LABEL = { '1h': 'son 1 saat', '24h': 'son 24 saat', '7d': 'son 7 gün' };
+  const STATS_REFRESH_MS = 60000;
+  const STATS_DEBOUNCE_MS = 3000;
+  let statsRange = '24h';
+  let statsData = null;
+  let statsBusy = false;
+  let statsAgain = false;
+  let statsTimer = 0;
+  const charts = {};
+
+  const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const palette = () => ({
+    text: cssVar('--muted'), grid: cssVar('--line'),
+    info: cssVar('--info'), warn: cssVar('--warn'), bad: cssVar('--bad'), ok: cssVar('--ok'),
+  });
+
+  function bucketLabel(t, bucket) {
+    if (bucket === 'day') {
+      const [y, m, d] = t.split('-').map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+    }
+    return new Date(t).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function buildCharts() {
+    const c = palette();
+    const base = { responsive: true, maintainAspectRatio: false, animation: false };
+    const countAxis = { beginAtZero: true, ticks: { color: c.text, precision: 0 }, grid: { color: c.grid }, border: { color: c.grid } };
+    const nameAxis = { ticks: { color: c.text }, grid: { display: false }, border: { color: c.grid } };
+    const hbar = (id, extraPlugins) => new Chart($(id), {
+      type: 'bar',
+      data: { labels: [], datasets: [{ data: [], backgroundColor: c.info, maxBarThickness: 22 }] },
+      options: Object.assign({}, base, {
+        indexAxis: 'y',
+        plugins: Object.assign({ legend: { display: false } }, extraPlugins),
+        scales: { x: countAxis, y: nameAxis },
+      }),
+    });
+
+    charts.timeline = new Chart($('ch-timeline'), {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'Düşük', data: [], backgroundColor: c.info, stack: 'e' },
+          { label: 'Orta', data: [], backgroundColor: c.warn, stack: 'e' },
+          { label: 'Yüksek', data: [], backgroundColor: c.bad, stack: 'e' },
+        ],
+      },
+      options: Object.assign({}, base, {
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { labels: { color: c.text, boxWidth: 12 } } },
+        scales: {
+          x: { stacked: true, ticks: { color: c.text, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false }, border: { color: c.grid } },
+          y: Object.assign({ stacked: true }, countAxis),
+        },
+      }),
+    });
+    charts.types = hbar('ch-types');
+    charts.sources = hbar('ch-sources', {
+      tooltip: { callbacks: { afterLabel: (ctx) => {
+        const row = statsData && statsData.top_sources[ctx.dataIndex];
+        return row ? `en yüksek risk ${Number(row.max_risk).toFixed(2)}` : '';
+      } } },
+    });
+    charts.actions = hbar('ch-actions');
+  }
+
+  function destroyCharts() {
+    for (const k of Object.keys(charts)) { charts[k].destroy(); delete charts[k]; }
+  }
+
+  function setChart(key, labels, datasets, colors) {
+    const ch = charts[key];
+    ch.data.labels = labels;
+    datasets.forEach((data, i) => { ch.data.datasets[i].data = data; });
+    if (colors) ch.data.datasets[0].backgroundColor = colors;
+    ch.update();
+  }
+
+  function renderStats() {
+    const d = statsData;
+    if (!d || typeof Chart === 'undefined') return;
+    if (!charts.timeline) buildCharts();
+    const c = palette();
+    const tones = { ok: c.ok, warn: c.warn, bad: c.bad, info: c.info, muted: c.text };
+
+    setChart('timeline', d.timeline.map((p) => bucketLabel(p.t, d.bucket)),
+      [d.timeline.map((p) => p.low), d.timeline.map((p) => p.medium), d.timeline.map((p) => p.high)]);
+    setChart('types', d.attack_types.map((r) => r.name), [d.attack_types.map((r) => r.count)],
+      d.attack_types.map((r) => (r.other ? c.text : c.info)));
+    setChart('sources', d.top_sources.map((r) => r.ip), [d.top_sources.map((r) => r.count)],
+      d.top_sources.map((r) => (r.max_risk >= 0.9 ? c.bad : r.max_risk >= 0.7 ? c.warn : c.info)));
+    setChart('actions', d.action_statuses.map((r) => (STATUS[r.status] || [r.status])[0]),
+      [d.action_statuses.map((r) => r.count)],
+      d.action_statuses.map((r) => tones[(STATUS[r.status] || [0, 'muted'])[1]] || c.text));
+
+    const noEvents = d.totals.events === 0;
+    $('ch-timeline-empty').hidden = !noEvents;
+    $('ch-types-empty').hidden = !noEvents;
+    $('ch-sources-empty').hidden = !noEvents;
+    $('ch-actions-empty').hidden = d.action_statuses.length > 0;
+    $('stats-sub').textContent = `${RANGE_LABEL[d.range] || d.range} · ${d.totals.events} olay`;
+    $('ch-timeline').setAttribute('aria-label', `Zamana göre olaylar, ${RANGE_LABEL[d.range] || d.range}: ${d.totals.events} olay`);
+  }
+
+  async function loadStats() {
+    if (statsBusy) { statsAgain = true; return; }
+    statsBusy = true;
+    const asked = statsRange;
+    try {
+      const r = await fetch(`${cfg.statsUrl}?range=${encodeURIComponent(asked)}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (r.status === 403) return; // oturum sorununu anlık görüntü isteği zaten bildirir
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      $('stats-msg').hidden = true;
+      if (asked === statsRange) { statsData = d; renderStats(); }
+    } catch (err) {
+      $('stats-msg').textContent = 'Grafik verisi alınamadı: ' + err.message;
+      $('stats-msg').hidden = false;
+    } finally {
+      statsBusy = false;
+      if (statsAgain) { statsAgain = false; loadStats(); }
+    }
+  }
+
+  // Canlı olay akışı çok sık gelebilir; grafikleri en fazla birkaç saniyede bir yenile.
+  function scheduleStats() {
+    if (statsTimer || typeof Chart === 'undefined') return;
+    statsTimer = setTimeout(() => { statsTimer = 0; loadStats(); }, STATS_DEBOUNCE_MS);
+  }
+
+  function initStats() {
+    if (typeof Chart === 'undefined') {
+      $('stats-msg').textContent = 'Chart.js yüklenemedi (dosya veya bütünlük kontrolü); grafikler gösterilemiyor.';
+      $('stats-msg').hidden = false;
+      return;
+    }
+    for (const b of document.querySelectorAll('[data-range]')) {
+      b.addEventListener('click', () => {
+        statsRange = b.dataset.range;
+        for (const o of document.querySelectorAll('[data-range]')) {
+          const on = o === b;
+          o.classList.toggle('active', on);
+          o.setAttribute('aria-pressed', String(on));
+        }
+        loadStats();
+      });
+    }
+    // Açık/koyu tema değişince renkler yeniden okunur.
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const retheme = () => { destroyCharts(); renderStats(); };
+    if (mq.addEventListener) mq.addEventListener('change', retheme);
+    setInterval(loadStats, STATS_REFRESH_MS);
+    loadStats();
+  }
+
   // ---- Bağlantı ------------------------------------------------------------
   function setConn(tone, text) {
     $('conn').className = 'pill ' + tone;
@@ -421,6 +622,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
   function start() {
     render();
     loadSnapshot();
+    initStats();
     if (typeof Centrifuge === 'undefined') {
       setConn('bad', 'Canlı bağlantı yok');
       banner([document.createTextNode('Centrifuge istemcisi yüklenemedi (dosya veya bütünlük kontrolü). Liste yüklendiğinde görünür ama canlı güncelleme ve butonlar çalışmaz.')]);
@@ -428,7 +630,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     }
     client = new Centrifuge(cfg.wsUrl);
     client.on('connecting', () => setConn('warn', 'Bağlanıyor…'));
-    client.on('connected', () => { setConn('ok', 'Canlı'); banner([]); loadSnapshot(); });
+    client.on('connected', () => { setConn('ok', 'Canlı'); banner([]); loadSnapshot(); scheduleStats(); });
     client.on('disconnected', (ctx) => {
       setConn('bad', 'Bağlantı yok');
       if (ctx && ctx.code === 4501) {
