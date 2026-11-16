@@ -193,3 +193,34 @@ def triage(incident, events, actions=None):
         "evidence": evidence,
         "tactics": tactics,
     }
+
+
+SNAPSHOT_VERSION = 1
+SNAPSHOT_EVENTS = 100
+SNAPSHOT_ACTIONS = 50
+
+
+def snapshot(incident):
+    """Karar anının kaydı: öneri + kanıt kodları/ağırlıkları + incident'in o anki özeti.
+
+    Denetim kaydına yazılır; sonradan hesaplanmaz, çünkü incident ve kanıtlar zamanla değişir. Böylece her insan kararı,
+    "karar anında bilinen kanıt + insan etiketi" çiftine dönüşür (ileride model eğitimi/kalibrasyonu için). Metin ve serbest
+    alan taşımaz: yalnızca sabit kodlar, sayılar ve bizim etiketlerimiz.
+    """
+    events = list(incident.events.order_by("-created_at", "-id")[:SNAPSHOT_EVENTS])
+    actions = list(Action.objects.filter(event__incident=incident).order_by("-id")[:SNAPSHOT_ACTIONS])
+    result = triage(incident, events, actions)
+    return {
+        "version": SNAPSHOT_VERSION,
+        "verdict": result["verdict"],
+        "score": result["score"],
+        "confidence": result["confidence"],
+        "evidence": [{"code": e["code"], "weight": e["weight"]} for e in result["evidence"]],
+        "tactics": result["tactics"],
+        "incident": {
+            "status_before": incident.status,
+            "event_count": incident.event_count,
+            "max_risk": incident.max_risk,
+            "risk_level": incident.risk_level,
+        },
+    }

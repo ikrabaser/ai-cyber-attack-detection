@@ -114,6 +114,10 @@ saldırı türü en yüksek riskli olaya göre tutulur.
   Onay incident'i kapatmaz (açık kalır, sonra Çöz ile kapatılır); Yanlış alarm ve Çöz iki tıklamayla onaylanır. Kapalı
   incident'e karar verilemez (409); karar denetim kaydına (`confirm_incident` / `close_incident`) yazılır ve hareketsizlik
   kapanışı insan kararını ezmez. Karar bekleyen eylemlere dokunmaz: eylemler ayrı onay akışından geçer.
+  Her insan kararı, karar anındaki **triage özetiyle** birlikte denetim kaydına yazılır (`detail.triage`: öneri, puan, güven,
+  kanıt kodları ve ağırlıkları, incident'in o anki durumu/olay sayısı/riski). Böylece "karar anında bilinen kanıt + insan
+  etiketi" çifti birikir (ileride ML için etiketli veri); hareketsizlik kapanışı (`system:idle`) etiket üretmez. Özet metin
+  taşımaz ve canlı akışa gitmez.
 - Son olaydan beri `INCIDENT_IDLE_SECONDS` (varsayılan 900) geçen açık incident'ler dakikada bir otomatik kapanır.
 - Ajanın her incelemesi `AnalysisRun` olarak kaydedilir (ajan adı, durum, özet, süre). Hata metni kayda yazılmaz, yalnızca hata türü.
 - Eylemler (`Action`) olay üzerinden incident'e bağlanır. Eski olaylar incident'siz kalır, hiçbir şey bozulmaz.
@@ -177,7 +181,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 201 test (+3 atlanır), Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 209 test (+3 atlanır), Postgres gerekmez
 ```
 
 Eşzamanlı öneri ve incident yarışlarının testleri (`core/tests_concurrency.py`, 3 test) yalnızca PostgreSQL'de çalışır, sqlite'ta

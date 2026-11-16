@@ -10,7 +10,7 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from . import audit, realtime
+from . import audit, realtime, triage
 from .models import Incident
 
 OPEN = [s.value for s in Incident.OPEN_STATUSES]
@@ -37,7 +37,7 @@ def _idle():
     return timedelta(seconds=settings.INCIDENT_IDLE_SECONDS)
 
 
-def _close(incident, actor, now, status=Incident.Status.RESOLVED):
+def _close(incident, actor, now, status=Incident.Status.RESOLVED, detail=None):
     incident.status = status
     incident.closed_at = now
     fields = ["status", "closed_at"]
@@ -47,7 +47,7 @@ def _close(incident, actor, now, status=Incident.Status.RESOLVED):
         incident.decided_at = now
         fields += ["decided_by", "decided_at"]
     incident.save(update_fields=fields)
-    audit.record(actor, "close_incident", incident.source_ip, status, incident_id=incident.pk)
+    audit.record(actor, "close_incident", incident.source_ip, status, incident_id=incident.pk, **(detail or {}))
     _publish_after_commit(incident)
 
 
@@ -156,17 +156,19 @@ def decide(incident_id, user, decision):
             raise DecisionError(404, "incident bulunamadı")
         if incident.status not in OPEN:
             raise DecisionError(409, f"incident zaten kapalı: {incident.get_status_display()}")
+        if decision == "confirm" and incident.status == Incident.Status.CONFIRMED:
+            raise DecisionError(409, "incident zaten onaylı")
+        # Karar anının kaydı (değişiklikten ÖNCE): öneri + kanıt kodları; ileride ML için etiketli veri.
+        detail = {"triage": triage.snapshot(incident)}
         if decision == "confirm":
-            if incident.status == Incident.Status.CONFIRMED:
-                raise DecisionError(409, "incident zaten onaylı")
             incident.status = Incident.Status.CONFIRMED
             incident.decided_by = actor
             incident.decided_at = now
             incident.save(update_fields=["status", "decided_by", "decided_at"])
-            audit.record(actor, "confirm_incident", incident.source_ip, "confirmed", incident_id=incident.pk)
+            audit.record(actor, "confirm_incident", incident.source_ip, "confirmed", incident_id=incident.pk, **detail)
             _publish_after_commit(incident)
         elif decision == "false_positive":
-            _close(incident, actor, now, Incident.Status.FALSE_POSITIVE)
+            _close(incident, actor, now, Incident.Status.FALSE_POSITIVE, detail)
         else:
-            _close(incident, actor, now, Incident.Status.RESOLVED)
+            _close(incident, actor, now, Incident.Status.RESOLVED, detail)
     return incident
