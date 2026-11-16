@@ -537,7 +537,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     if (data.type === 'step') { addStep(data, true); scheduleFlow(); return; }
     if (data.type === 'incident') {
       upsert(incidentsMap, data); scheduleIncidents(); if (incidentId === data.id) scheduleIncidentDetail();
-      if (data.status === 'false_positive') dismissEvents(data.id);
+      if (data.status === 'false_positive' || data.status === 'resolved') settleEvents(data.id, data.status === 'resolved' ? 'resolved' : 'dismissed');
       return;
     }
     if (data.type === 'event') {
@@ -555,12 +555,13 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     if (incidentId && ((data.type === 'event' && data.incident_id === incidentId) || data.type === 'action')) scheduleIncidentDetail();
   }
 
-  // Yanlış alarm kararı incident'in olaylarını da kapatır; akıştaki satırlar yeniden yükleme beklemeden güncellenir.
-  function dismissEvents(incident) {
+  // Incident kapanınca olayları da kapanır (yanlış alarm: dismissed, çözüldü: resolved); akıştaki satırlar yeniden yükleme beklemeden güncellenir.
+  function settleEvents(incident, status) {
     let changed = false;
     for (const map of [events, filtered]) {
       for (const [id, e] of map) {
-        if (e.incident_id === incident && e.status !== 'dismissed') { map.set(id, Object.assign({}, e, { status: 'dismissed' })); changed = true; }
+        if (e.incident_id !== incident || e.status === status || e.status === 'dismissed') continue;
+        map.set(id, Object.assign({}, e, { status })); changed = true;
       }
     }
     if (changed) scheduleRender();

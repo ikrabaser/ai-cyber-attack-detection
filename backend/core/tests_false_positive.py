@@ -52,14 +52,12 @@ class FalsePositiveEventsTests(TestCase):
         self.assertEqual(row.detail["events_dismissed"], 2)
         self.assertIn("triage", row.detail)  # etiket kaydı bozulmadı
 
-    def test_other_decisions_leave_events_alone(self):
-        for decision in ("confirm", "resolve"):
-            inc = make_incident()
-            e = make_event(inc, Event.Status.INVESTIGATING)
-            incidents.decide(inc.pk, self.user, decision)
-            e.refresh_from_db()
-            self.assertEqual(e.status, Event.Status.INVESTIGATING, decision)
-            inc.delete()
+    def test_confirm_leaves_events_alone(self):
+        inc = make_incident()
+        e = make_event(inc, Event.Status.INVESTIGATING)
+        incidents.decide(inc.pk, self.user, "confirm")
+        e.refresh_from_db()
+        self.assertEqual(e.status, Event.Status.INVESTIGATING)  # onay incident'i kapatmaz
 
     def test_pending_actions_are_not_touched(self):
         inc = make_incident()
@@ -131,3 +129,70 @@ class DeciderLabelTests(TestCase):
         from . import realtime
         inc = make_incident()
         self.assertNotIn("decided_by", realtime.incident_payload(inc))
+
+
+class ResolveEventsTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("ops", password="x", is_staff=True)
+
+    def test_resolve_marks_events_resolved_and_counts_them(self):
+        inc = make_incident()
+        mine = [make_event(inc, s) for s in (Event.Status.NEW, Event.Status.INVESTIGATING, Event.Status.RESOLVED)]
+        other = make_event(make_incident(ip="203.0.113.8"))
+        incidents.decide(inc.pk, self.user, "resolve")
+        for e in mine:
+            e.refresh_from_db()
+            self.assertEqual(e.status, Event.Status.RESOLVED)
+        other.refresh_from_db()
+        self.assertEqual(other.status, Event.Status.NEW)
+        row = AuditLog.objects.get(verb="close_incident")
+        self.assertEqual(row.detail["events_resolved"], 2)  # zaten çözülmüş olan sayılmaz
+        self.assertNotIn("events_dismissed", row.detail)
+
+    def test_resolve_after_confirm_also_settles_events(self):
+        inc = make_incident()
+        e = make_event(inc, Event.Status.INVESTIGATING)
+        incidents.decide(inc.pk, self.user, "confirm")
+        incidents.decide(inc.pk, self.user, "resolve")
+        e.refresh_from_db()
+        self.assertEqual(e.status, Event.Status.RESOLVED)
+
+    def test_resolve_never_overrides_dismissed_event(self):
+        inc = make_incident()
+        keep = make_event(inc, Event.Status.DISMISSED)
+        incidents.decide(inc.pk, self.user, "resolve")
+        keep.refresh_from_db()
+        self.assertEqual(keep.status, Event.Status.DISMISSED)
+
+    def test_idle_close_resolves_events_and_logs_system(self):
+        inc = make_incident()
+        e = make_event(inc, Event.Status.INVESTIGATING)
+        Incident.objects.filter(pk=inc.pk).update(last_seen=timezone.now() - timedelta(hours=2))
+        incidents.close_idle()
+        e.refresh_from_db()
+        self.assertEqual(e.status, Event.Status.RESOLVED)
+        row = AuditLog.objects.get(verb="close_incident")
+        self.assertEqual((row.actor, row.detail["events_resolved"]), ("system:idle", 1))
+
+    def test_idle_close_keeps_confirmed_incident_decision_but_settles_events(self):
+        inc = make_incident()
+        e = make_event(inc)
+        incidents.decide(inc.pk, self.user, "confirm")
+        Incident.objects.filter(pk=inc.pk).update(last_seen=timezone.now() - timedelta(hours=2))
+        incidents.close_idle()
+        inc.refresh_from_db(); e.refresh_from_db()
+        self.assertEqual(inc.decided_by, f"user:{self.user.pk}")
+        self.assertEqual(e.status, Event.Status.RESOLVED)
+
+    def test_worker_does_not_reopen_resolved_event(self):
+        inc = make_incident()
+        e = make_event(inc)
+        incidents.decide(inc.pk, self.user, "resolve")
+        with mock.patch("core.tasks.get_agent") as get, mock.patch("core.tasks.realtime.publish") as pub:
+            get.return_value.name = "a"
+            get.return_value.investigate.return_value = "özet"
+            investigate_event(e.pk)
+        e.refresh_from_db()
+        self.assertEqual(e.status, Event.Status.RESOLVED)
+        feed = [c.args[1] for c in pub.call_args_list if c.args[1].get("type") == "event"]
+        self.assertEqual([p["status"] for p in feed], ["resolved"])

@@ -37,6 +37,20 @@ def _idle():
     return timedelta(seconds=settings.INCIDENT_IDLE_SECONDS)
 
 
+def _settle_events(incident, status):
+    """Incident kapanınca olayları aynı sonuca getirir: yanlış alarm -> dismissed, çözüldü -> resolved.
+
+    Daha önce yanlış alarm sayılan olaya dokunulmaz. (audit anahtarı, etkilenen olay sayısı) döner.
+    """
+    if status == Incident.Status.FALSE_POSITIVE:
+        target, key = Event.Status.DISMISSED, "events_dismissed"
+        qs = incident.events.exclude(status=target)
+    else:
+        target, key = Event.Status.RESOLVED, "events_resolved"
+        qs = incident.events.exclude(status__in=[target, Event.Status.DISMISSED])
+    return key, qs.update(status=target)
+
+
 def _close(incident, actor, now, status=Incident.Status.RESOLVED, detail=None):
     incident.status = status
     incident.closed_at = now
@@ -47,7 +61,9 @@ def _close(incident, actor, now, status=Incident.Status.RESOLVED, detail=None):
         incident.decided_at = now
         fields += ["decided_by", "decided_at"]
     incident.save(update_fields=fields)
-    audit.record(actor, "close_incident", incident.source_ip, status, incident_id=incident.pk, **(detail or {}))
+    key, settled = _settle_events(incident, status)
+    audit.record(actor, "close_incident", incident.source_ip, status, incident_id=incident.pk,
+                 **{key: settled}, **(detail or {}))
     _publish_after_commit(incident)
 
 
@@ -168,10 +184,6 @@ def decide(incident_id, user, decision):
             audit.record(actor, "confirm_incident", incident.source_ip, "confirmed", incident_id=incident.pk, **detail)
             _publish_after_commit(incident)
         elif decision == "false_positive":
-            # Yanlış alarm incident'in tüm olayları için de geçerlidir; kaç olayın etkilendiği denetim kaydına yazılır.
-            detail["events_dismissed"] = incident.events.exclude(status=Event.Status.DISMISSED).update(
-                status=Event.Status.DISMISSED
-            )
             _close(incident, actor, now, Incident.Status.FALSE_POSITIVE, detail)
         else:
             _close(incident, actor, now, Incident.Status.RESOLVED, detail)
