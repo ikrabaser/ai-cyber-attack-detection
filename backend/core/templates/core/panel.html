@@ -239,6 +239,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
       <div class="kpi"><div class="n" id="incd-span">—</div><div class="l">İlk / son görülme</div></div>
       <div class="kpi"><div class="n" id="incd-risk">—</div><div class="l">En yüksek risk</div></div>
     </div>
+    <div id="incd-decision" class="tri-head" role="status"></div>
     <div id="incd-btns" class="incd-btns" role="group" aria-label="Incident kararı"></div>
     <h3 class="sub">Triage <span class="muted">kanıtlar ve öneri; karar senin</span></h3>
     <div id="incd-triage-head" class="tri-head"></div>
@@ -534,7 +535,11 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
   function handlePublication(data) {
     if (!data || typeof data !== 'object') return;
     if (data.type === 'step') { addStep(data, true); scheduleFlow(); return; }
-    if (data.type === 'incident') { upsert(incidentsMap, data); scheduleIncidents(); if (incidentId === data.id) scheduleIncidentDetail(); return; }
+    if (data.type === 'incident') {
+      upsert(incidentsMap, data); scheduleIncidents(); if (incidentId === data.id) scheduleIncidentDetail();
+      if (data.status === 'false_positive') dismissEvents(data.id);
+      return;
+    }
     if (data.type === 'event') {
       upsert(events, data); live.set('e:' + data.id, Date.now());
       if (filterActive() && matchesFilter(data)) {
@@ -548,6 +553,17 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     scheduleStats();
     if (sourceIp && (data.source_ip === sourceIp || data.target === sourceIp)) scheduleSource();
     if (incidentId && ((data.type === 'event' && data.incident_id === incidentId) || data.type === 'action')) scheduleIncidentDetail();
+  }
+
+  // Yanlış alarm kararı incident'in olaylarını da kapatır; akıştaki satırlar yeniden yükleme beklemeden güncellenir.
+  function dismissEvents(incident) {
+    let changed = false;
+    for (const map of [events, filtered]) {
+      for (const [id, e] of map) {
+        if (e.incident_id === incident && e.status !== 'dismissed') { map.set(id, Object.assign({}, e, { status: 'dismissed' })); changed = true; }
+      }
+    }
+    if (changed) scheduleRender();
   }
 
   let snapBusy = false;
@@ -1232,7 +1248,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     $('incd-events').textContent = '…';
     $('incd-span').textContent = '—';
     $('incd-risk').textContent = '—';
-    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body', 'incd-btns', 'incd-triage', 'incd-triage-head']) $(b).replaceChildren();
+    for (const b of ['incd-runs', 'incd-events-body', 'incd-actions-body', 'incd-btns', 'incd-triage', 'incd-triage-head', 'incd-decision']) $(b).replaceChildren();
     incidentMessage('Yükleniyor…');
     const card = $('incd-card');
     card.hidden = false;
@@ -1321,6 +1337,15 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     }));
   }
 
+  function renderDecision(d) {
+    const box = $('incd-decision');
+    if (!d.decided_by_label) { box.replaceChildren(); return; }
+    box.replaceChildren(
+      el('span', { cls: 'muted', text: 'Karar veren' }), el('strong', { text: d.decided_by_label }),
+      d.decided_at && el('span', { cls: 'muted mono', text: fmtTime(d.decided_at) })
+    );
+  }
+
   function renderIncidentDetail() {
     const d = incidentData;
     if (!d || !incidentId) return;
@@ -1333,6 +1358,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
     $('incd-span').textContent = `${fmtTime(inc.first_seen)} – ${fmtTime(inc.last_seen)}`;
     $('incd-risk').textContent = Number(inc.max_risk).toFixed(2);
     renderIncidentButtons();
+    renderDecision(d);
     renderTriage(d.triage);
 
     $('incd-runs-empty').hidden = d.runs.length > 0;

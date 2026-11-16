@@ -4,6 +4,8 @@ Olayın `features` alanı (saldırgan kontrollü ham veri) hiçbir zaman dışar
 sayıları ve sabit metinleri döndürür.
 """
 
+from django.contrib.auth import get_user_model
+
 from . import realtime, triage
 from .models import Action, AnalysisRun, Incident
 from .protection import is_protected_ip
@@ -27,6 +29,20 @@ def parse_id(raw):
     if not raw.isascii() or not raw.isdigit() or len(raw) > 12:
         raise IncidentError("geçersiz incident numarası")
     return int(raw)
+
+
+SYSTEM_DECIDERS = {"system:idle": "otomatik (hareketsizlik)"}
+
+
+def decider_label(decided_by):
+    """Kararı verenin panelde gösterilecek adı: kullanıcı adı ya da sistem açıklaması."""
+    if not decided_by:
+        return ""
+    if decided_by.startswith("user:") and decided_by[5:].isdigit():
+        User = get_user_model()
+        name = User.objects.filter(pk=int(decided_by[5:])).values_list(User.USERNAME_FIELD, flat=True).first()
+        return name or f"silinmiş kullanıcı #{decided_by[5:]}"
+    return SYSTEM_DECIDERS.get(decided_by, "sistem")
 
 
 def _run_item(run):
@@ -62,6 +78,8 @@ def build_incident(raw_id):
         "incident": realtime.incident_payload(incident),
         "protected": is_protected_ip(incident.source_ip),
         "decided_by": incident.decided_by,
+        "decided_by_label": decider_label(incident.decided_by),
+        "decided_at": incident.decided_at.isoformat() if incident.decided_at else None,
         "events": [realtime.event_payload(e) for e in events],
         "events_truncated": incident.event_count > MAX_EVENTS,
         "runs": [_run_item(r) for r in runs],

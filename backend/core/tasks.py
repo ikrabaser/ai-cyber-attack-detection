@@ -24,8 +24,11 @@ def _start_run(event, agent):
 @app.task(queue="investigate")
 def investigate_event(event_id):
     event = Event.objects.get(pk=event_id)
-    event.status = Event.Status.INVESTIGATING
-    event.save(update_fields=["status"])
+    # Sıradayken insan "yanlış alarm" dediyse bu karar worker tarafından geri alınmaz.
+    Event.objects.filter(pk=event.pk).exclude(status=Event.Status.DISMISSED).update(
+        status=Event.Status.INVESTIGATING
+    )
+    event.refresh_from_db(fields=["status"])
 
     agent = get_agent()
     run = _start_run(event, agent)
@@ -51,6 +54,7 @@ def investigate_event(event_id):
         incidents.publish_state(event.incident_id)
     audit.record("worker", "investigate_event", event.source_ip, "done",
                  event_id=event.pk, incident_id=event.incident_id, note=event.summary[:300])
+    event.refresh_from_db(fields=["status"])  # inceleme sürerken karar verilmiş olabilir
     realtime.publish(realtime.CHANNEL_FEED, realtime.event_payload(event))
 
 

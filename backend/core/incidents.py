@@ -11,7 +11,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from . import audit, realtime, triage
-from .models import Incident
+from .models import Event, Incident
 
 OPEN = [s.value for s in Incident.OPEN_STATUSES]
 MAX_TRIES = 3
@@ -168,6 +168,10 @@ def decide(incident_id, user, decision):
             audit.record(actor, "confirm_incident", incident.source_ip, "confirmed", incident_id=incident.pk, **detail)
             _publish_after_commit(incident)
         elif decision == "false_positive":
+            # Yanlış alarm incident'in tüm olayları için de geçerlidir; kaç olayın etkilendiği denetim kaydına yazılır.
+            detail["events_dismissed"] = incident.events.exclude(status=Event.Status.DISMISSED).update(
+                status=Event.Status.DISMISSED
+            )
             _close(incident, actor, now, Incident.Status.FALSE_POSITIVE, detail)
         else:
             _close(incident, actor, now, Incident.Status.RESOLVED, detail)
