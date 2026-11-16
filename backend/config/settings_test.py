@@ -22,3 +22,5 @@ PROTECTED_IPS = ["192.168.56.1", "192.168.56.10", "10.0.0.0/24"]
 PROTECTED_HOSTS = ["sensor", "gateway"]
 AUTO_REMEDIATION_MODE = "advise"
 NOTIFY_EMAIL_TO = []  # .env içindeki alıcılar testleri etkilemesin; bildirim testleri kendi ayarını verir
+# Test sırları kısa; başlangıç denetimi (core.checks) testlerde sessiz, kendi testleri doğrudan çağırır.
+SILENCED_SYSTEM_CHECKS = ["core.W001", "core.E001"]

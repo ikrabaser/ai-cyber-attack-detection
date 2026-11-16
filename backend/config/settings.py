@@ -28,6 +28,10 @@ if not SECRET_KEY:
     else:
         raise ImproperlyConfigured("DJANGO_SECRET_KEY tanımlı olmalı.")
 
+# Örnek/zayıf sırlar DEBUG kapalıyken başlangıç hatasıdır, DEBUG açıkken uyarı (core.checks). DEBUG'dan ayrı tutulur:
+# Django test çalıştırıcısı testlerde DEBUG'ı kendisi kapatır ve bu, geliştirme .env'ini testte hataya çevirmemeli.
+SECRETS_STRICT = not DEBUG
+
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,backend")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
 

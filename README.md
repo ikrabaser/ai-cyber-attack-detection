@@ -127,6 +127,27 @@ saldırı türü en yüksek riskli olaya göre tutulur.
   ajan incelemeleri (ajan, durum, not), olaylar ve eylemler. Liste ve açık kart `events:incidents` kanalından canlı güncellenir.
   Olayın ham `features` alanı hiçbir yanıtta yoktur; metinler yalnızca `textContent` ile basılır.
 
+### Başlangıç denetimi: örnek ve zayıf sırlar
+
+`SENSOR_API_TOKEN`, `RT_PROXY_SECRET`, `RT_API_KEY` ve `DJANGO_SECRET_KEY` `.env.example`'daki "degistir-beni..." değerleriyle ya da
+16 karakterden kısa bir değerle çalışıyorsa `manage.py check` / `runserver` uyarı verir (`core.W001`); `DJANGO_DEBUG=false`
+iken hata verir (`core.E001`) ve uygulama başlamaz. Mesaj sırrın kendisini yazmaz, yalnızca adını. Boş bırakılan sır uyarı
+üretmez: ilgili uç nokta zaten kapalıdır. Üretmek için: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+Sırrı değiştirince `docker compose restart backend centrifugo` (sensörde de aynı token olmalı).
+
+### Karar verilerini dışa aktarma (ML için)
+
+```
+docker compose exec backend python manage.py export_decisions --out /app/kararlar.jsonl
+docker compose exec backend python manage.py export_decisions --format csv --out /app/kararlar.csv
+```
+
+Her satır bir incident kararıdır: etiket (`attack` = Onayla, `false_positive` = Yanlış alarm), karar anındaki triage özeti
+(öneri, puan, güven, kanıt kodu ağırlıkları; CSV'de `e_<kod>` sütunları) ve incident özeti. Çöz tek başına etiket sayılmaz
+(`--include-unlabeled` ile `unlabeled` olarak eklenir). Aynı incident için birden çok etiketli karar varsa en sonuncusu
+geçerlidir. Kaynak IP ve karar veren kullanıcı yazılmaz. Hareketsizlik kapanışı etiket üretmez. `./backend` konteynere
+bağlı olduğu için dosya `backend/kararlar.jsonl` olarak görünür (`*.jsonl`/`*.csv` dosyalarını git'e ekleme).
+
 ### Triage (kanıt ve öneri)
 
 Incident ayrıntı kartında **Triage** bölümü, "bu gerçek mi?" sorusu için kanıt toplar (`core/triage.py`). Kural tabanlı ve
@@ -181,7 +202,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 209 test (+3 atlanır), Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 227 test (+3 atlanır), Postgres gerekmez
 ```
 
 Eşzamanlı öneri ve incident yarışlarının testleri (`core/tests_concurrency.py`, 3 test) yalnızca PostgreSQL'de çalışır, sqlite'ta
