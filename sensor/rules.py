@@ -89,28 +89,33 @@ def brute_force(row):
 RULES = {"port_scan": port_scan, "brute_force": brute_force}
 
 
-def detect(rows, window=WINDOW_SECONDS):
-    """Özellik satırlarını (zamana göre sıralı) tarar, tetiklenen kurallar için Detection döndürür.
+class Detector:
+    """Özellik satırlarını TEK TEK alıp ısrar (persistence) zincirini kendisi tutan dedektör.
 
-    Her (kaynak, pencere) için en fazla bir sonuç: tetiklenen kuralların en yüksek skorlusu.
+    `detect` dosyanın tamamını tarar; canlı izleme ise pencereler kapandıkça satır verir. İkisi de
+    aynı sınıfı kullanır, bu yüzden aynı trafikte aynı skoru üretir. Satırlar zamana göre
+    sıralı verilmelidir.
     """
-    streaks = {}  # (kaynak, kural) -> (son pencere başlangıcı, ardışık sayısı)
-    detections = []
 
-    for row in rows:
+    def __init__(self, window=WINDOW_SECONDS):
+        self.window = window
+        self.streaks = {}  # (kaynak, kural) -> (son pencere başlangıcı, ardışık sayısı)
+
+    def feed(self, row):
+        """Bir satır -> o (kaynak, pencere) için tetiklenen kuralların en yüksek skorlusu, yoksa None."""
         best = None
         for name, rule in RULES.items():
             key = (row["src_ip"], name)
             hit = rule(row)
             if hit is None:
-                streaks.pop(key, None)  # kural sustu: ısrar zinciri bozuldu
+                self.streaks.pop(key, None)  # kural sustu: ısrar zinciri bozuldu
                 continue
 
             base, reasons = hit
-            prev = streaks.get(key)
-            consecutive = prev is not None and row["window_start"] == prev[0] + window
+            prev = self.streaks.get(key)
+            consecutive = prev is not None and row["window_start"] == prev[0] + self.window
             count = prev[1] + 1 if consecutive else 1
-            streaks[key] = (row["window_start"], count)
+            self.streaks[key] = (row["window_start"], count)
 
             bonus = min(STREAK_BONUS_MAX, STREAK_BONUS * (count - 1))
             score = min(1.0, base + bonus)
@@ -118,7 +123,18 @@ def detect(rows, window=WINDOW_SECONDS):
                 reasons = [*reasons, f"{count}. ardışık pencere (+{bonus:.2f})"]
             if best is None or score > best.risk_score:
                 best = Detection(row["src_ip"], row["window_start"], name, score, reasons, row)
+        return best
 
-        if best is not None:
-            detections.append(best)
-    return detections
+
+def detect(rows, window=WINDOW_SECONDS):
+    """Özellik satırlarını (zamana göre sıralı) tarar, tetiklenen kurallar için Detection döndürür.
+
+    Her (kaynak, pencere) için en fazla bir sonuç: tetiklenen kuralların en yüksek skorlusu.
+    """
+    detector = Detector(window)
+    found = []
+    for row in rows:
+        det = detector.feed(row)
+        if det is not None:
+            found.append(det)
+    return found

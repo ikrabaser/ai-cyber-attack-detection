@@ -141,6 +141,34 @@ süresi dolmamış önlem, TTL penceresindeki kuru çalıştırma) varsa yenisin
 denetim kaydına `deduplicated` yazar. Örnek senaryoda 7 olay → panelde **tek** onay bekleyen engel.
 İki olay aynı anda işlenirse (birden fazla worker) PostgreSQL danışma kilidi, aynı hedef için tek eylem açılmasını sağlar (`core.actions._lock_target`).
 
+## Canlı izleme (`--follow`)
+
+Toplu modda dosya bir kez okunur. `--follow` dosyayı `tail -f` gibi takip eder; her 10 saniyelik
+pencere bittikten sonra değerlendirilir ve tespit varsa hemen backend'e gider. Panelde saldırı,
+saldırı sürerken görünür.
+
+```bash
+python detect.py ../lab/data/conn.log --follow --send       # yalnızca YENİ kayıtları izler
+python detect.py ../lab/data/conn.log --follow --send -v    # kural tetiklenmeyen pencereleri de yazar
+python detect.py ../lab/data/conn.log --follow --from-start # dosyada zaten olanları da işler
+```
+
+Nasıl çalışır ve neye dikkat etmeli:
+
+- **Gecikme:** Zeek bir bağlantıyı bitince yazar ve `ts` bağlantının BAŞLANGICIDIR; uzun bir bağlantı
+  kendi penceresi geçtikten sonra gelir. Bu yüzden pencere bitiminden `--grace` sn (varsayılan 8) sonra
+  kapanır. Tespit en geç yaklaşık `pencere + grace` = 18 sn sonra panelde olur.
+- **Geç kalan kayıt:** Pencere kapandıktan sonra gelen kayıt atılır ve çıkışta sayılır
+  (`N kayıt geç geldiği için atlandı`). Bu sayı sıfırdan belirgin büyükse `--grace` artırılmalı.
+- **Aynı sonuç:** Canlı mod `Detector` sınıfını (kurallar + ısrar bonusu) toplu modla paylaşır. Örnek
+  `sample/conn.log` canlı akıtıldığında toplu moddaki aynı 7 tespit çıkar (`test_follow.py`).
+- **Saat farkı sorun değil:** Pencerenin bitip bitmediği, kayıtların kendi zamanı ile izleyicinin
+  saati arasındaki farktan öğrenilir; Zeek konteyneri ve Windows saati farklı olsa da çalışır.
+- **Backend kapalıysa:** İzleme durmaz; o olay atlanır ve "gönderilemedi" diye sayılır. Token
+  reddedilirse (401) durur.
+- **Zeek yeniden başlarsa:** Dosya kısalırsa (Zeek `conn.log`'u sıfırlar) baştan okunur.
+- **Durdurma:** Ctrl+C; çıkışta özet yazılır, kapanmamış pencereler gönderilmez.
+
 ## Dosyalar
 
 - `zeek_reader.py`: Zeek TSV (varsayılan) ve JSON biçimini okuyan, bağımlılıksız okuyucu.
@@ -149,6 +177,7 @@ denetim kaydına `deduplicated` yazar. Örnek senaryoda 7 olay → panelde **tek
 - `extract_features.py`: özellik tablosunu gösteren / CSV'ye yazan komut (Kademe 2).
 - `rules.py`: iki kural + ısrar bonusu (Kademe 3).
 - `client.py`: tespiti backend'in JSON biçimine çevirir ve `POST /api/events/` ile yollar (Kademe 3).
-- `detect.py`: conn.log → özellik → kural → (isteğe bağlı) backend komutu (Kademe 3).
+- `detect.py`: conn.log → özellik → kural → (isteğe bağlı) backend komutu (Kademe 3); `--follow` ile canlı.
+- `follow.py`: dosyayı takip eden `tail_records` ve pencereleri kapatan `LiveMonitor` (canlı izleme).
 - `sample/conn.log`: sentetik örnek.
-- `test_zeek_reader.py`, `test_features.py`, `test_rules.py`, `test_client.py`: testler (49).
+- `test_zeek_reader.py`, `test_features.py`, `test_rules.py`, `test_client.py`, `test_follow.py`: testler (74).

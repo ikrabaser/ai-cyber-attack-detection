@@ -230,7 +230,7 @@ Henüz denenmeyenler:
 
 1. Lab: izole Docker ağı, Zeek, `conn.log` → özellik çıkarma → `POST /api/events/`. İskelet ve çalıştırma adımları
    [`lab/README.md`](lab/README.md)'de; sensör kademeleri [`sensor/README.md`](sensor/README.md)'de (Kademe 1-3 hazır,
-   Kademe 4 lab ilk çalıştırması bekleniyor).
+   Kademe 4 lab ilk çalıştırması bekleniyor). Sensör `--follow` ile `conn.log`'u canlı izleyebilir.
 2. XGBoost baseline, ardından Autoencoder; karar tablosu ve eşikler (PR eğrisi).
 3. Claude agent: `core/agent.py` içindeki `RuleAgent` yerine, araçları `core.actions` üzerinden geçen agent.
 4. Gerçek güvenlik duvarı arka ucu (lab ağ geçidi) ve kontrollü saldırı senaryoları ile ölçüm.

@@ -61,6 +61,20 @@ tespite kadar geçen süreyi verir. `windows.csv` etiketli satırlardır (model 
 python sensor/detect.py lab/data/conn.log --send
 ```
 
+**Canlı izleme (saldırı sürerken panelde):** Zeek çalışırken, ayrı bir PowerShell penceresinde sensörü
+`--follow` ile başlat; sonra saldırıyı çalıştır. `-v` kural tetiklenmeyen pencereleri de yazar, böylece
+sensörün trafiği gördüğünü anlarsın:
+```powershell
+$env:SENSOR_API_TOKEN = (Select-String -Path .env -Pattern '^SENSOR_API_TOKEN=(.*)$').Matches.Groups[1].Value
+```
+```powershell
+python sensor/detect.py lab/data/conn.log --follow --send -v
+```
+Her pencere 10 sn + 8 sn bekleme sonrası değerlendirilir, yani tespit saldırıdan ~20 sn içinde panelde olur
+(ayrıntı: `sensor/README.md`). Önce şunu doğrula: Zeek `conn.log`'a ne kadar hızlı yazıyor? Bir saldırı
+sürerken ayrı pencerede `Get-Content lab/data/conn.log -Wait -Tail 3` satırların hemen düşüp düşmediğini
+gösterir. Zeek log'u tamponluyorsa tespit gecikir; bu durumda gecikmeyi ölçüp rapora yaz.
+
 7. Bitince kapat (`-v` yok: `data/` klasöründeki dosyalar kalır):
 ```powershell
 docker compose -f lab/docker-compose.lab.yml down
