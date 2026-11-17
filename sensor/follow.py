@@ -26,61 +26,86 @@ from rules import Detector
 from zeek_reader import LineParser
 
 
-def tail_records(path, poll=0.5, from_start=False, sleep=time.sleep, stop=lambda: False, on_error=None):
-    """Dosyaya eklenen kayıtları sırayla verir; yeni veri yoksa her turda None verir (zaman tiki).
+class LogTail:
+    """Bir log dosyasını `tail -f` gibi izler. `read_new()` her çağrıda yeni kayıtları liste olarak verir.
 
     from_start=False: izleme başladığında dosyada ZATEN olan kayıtlar atlanır (başlıklar okunur,
     kayıtlar verilmez). Sonradan oluşan ya da kısalıp yeniden başlayan dosya her zaman baştan okunur.
-    on_error: bozuk satırda çağrılır (ValueError); verilmezse hata fırlatılır.
+    Yarım satır bekletilir. on_error: bozuk satırda çağrılır (ValueError); verilmezse hata fırlatılır.
     """
-    existed_at_start = os.path.exists(path)
-    handle, parser, pos, lineno, skip = None, None, 0, 0, False
+
+    def __init__(self, path, from_start=False, on_error=None):
+        self.path = path
+        self.on_error = on_error
+        self._skip_first = not from_start and os.path.exists(path)
+        self._handle = None
+        self._parser = None
+        self._pos = 0
+        self._lineno = 0
+
+    def close(self):
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+
+    def read_new(self):
+        if self._handle is not None:
+            try:
+                truncated = os.path.getsize(self.path) < self._pos
+            except OSError:  # dosya silindi
+                truncated = True
+            if truncated:
+                self.close()
+
+        skip = False
+        if self._handle is None:
+            if not os.path.exists(self.path):
+                return []
+            skip = self._skip_first   # izleme başlarken vardı ve baştan okuma istenmedi: ilk turda atla
+            self._skip_first = False  # bundan sonra açılan dosya yenidir: tamamı okunur
+            self._handle = open(self.path, "rb")
+            self._parser, self._pos, self._lineno = LineParser(str(self.path)), 0, 0
+
+        records = []
+        while True:
+            line = self._handle.readline()
+            if not line:
+                break
+            if not line.endswith(b"\n"):  # yarım satır: Zeek henüz bitirmedi, sonra tekrar dene
+                self._handle.seek(self._pos)
+                break
+            self._pos += len(line)
+            self._lineno += 1
+            try:
+                record = self._parser.parse(line.decode("utf-8"), self._lineno)
+            except ValueError as exc:  # UnicodeDecodeError de ValueError'dır
+                if self.on_error is None:
+                    raise
+                self.on_error(exc)
+                continue
+            if record is not None and not skip:
+                records.append(record)
+        return records
+
+
+def tail_records(path, poll=0.5, from_start=False, sleep=time.sleep, stop=lambda: False, on_error=None):
+    """`LogTail` üstüne kurulu üreteç: kayıtları sırayla verir; yeni veri yoksa her turda None verir."""
+    tail = LogTail(path, from_start, on_error)
     try:
         while not stop():
-            if handle is not None:
-                try:
-                    truncated = os.path.getsize(path) < pos
-                except OSError:  # dosya silindi
-                    truncated = True
-                if truncated:
-                    handle.close()
-                    handle = None
-
-            if handle is None:
-                if not os.path.exists(path):
-                    yield None
-                    sleep(poll)
-                    continue
-                # Dosya izleme başlarken varsa ve baştan okuma istenmediyse ilk turda kayıtları atla.
-                skip = existed_at_start and not from_start
-                existed_at_start = False  # bundan sonra açılan dosya yenidir: tamamı okunur
-                handle = open(path, "rb")
-                parser, pos, lineno = LineParser(str(path)), 0, 0
-
-            while True:
-                line = handle.readline()
-                if not line:
-                    break
-                if not line.endswith(b"\n"):  # yarım satır: Zeek henüz bitirmedi, sonra tekrar dene
-                    handle.seek(pos)
-                    break
-                pos += len(line)
-                lineno += 1
-                try:
-                    record = parser.parse(line.decode("utf-8"), lineno)
-                except ValueError as exc:  # UnicodeDecodeError de ValueError'dır
-                    if on_error is None:
-                        raise
-                    on_error(exc)
-                    continue
-                if record is not None and not skip:
-                    yield record
-            skip = False
+            yield from tail.read_new()
             yield None
             sleep(poll)
     finally:
-        if handle is not None:
-            handle.close()
+        tail.close()
+
+
+class _Bucket:
+    """Bir pencerede biriken kayıtlar: bağlantılar (conn.log) ve SSH kayıtları (ssh.log)."""
+
+    def __init__(self):
+        self.conns = []
+        self.ssh = []
 
 
 class LiveMonitor:
@@ -91,7 +116,7 @@ class LiveMonitor:
         self.grace = grace
         self.clock = clock
         self.detector = Detector(window)
-        self.pending = defaultdict(list)  # pencere başlangıcı -> o penceredeki bağlantılar
+        self.pending = defaultdict(_Bucket)  # pencere başlangıcı -> o penceredeki kayıtlar
         self.closed_through = None        # kapanan en son pencerenin başlangıcı
         self.offset = None                # en büyük (kayıt zamanı - duvar saati)
         self.rows = 0                     # değerlendirilen (kaynak, pencere) sayısı
@@ -108,7 +133,15 @@ class LiveMonitor:
         if self.closed_through is not None and start <= self.closed_through:
             self.late += 1
             return
-        self.pending[start].append(record)
+        self.pending[start].conns.append(record)
+
+    def add_ssh(self, record):
+        """ssh.log kaydı (başarısız parola denemesi sayısı için). Pencere saatini ilerletmez."""
+        start = window_start(record["ts"], self.window)
+        if self.closed_through is not None and start <= self.closed_through:
+            self.late += 1
+            return
+        self.pending[start].ssh.append(record)
 
     def close_ready(self):
         """Süresi dolan pencereleri kapatır. [(özellik satırı, Detection ya da None)] döndürür."""
@@ -119,7 +152,8 @@ class LiveMonitor:
         results = []
         for start in ready:
             self.closed_through = start
-            for row in extract(self.pending.pop(start), self.window):
+            bucket = self.pending.pop(start)
+            for row in extract(bucket.conns, self.window, bucket.ssh):
                 det = self.detector.feed(row)
                 self.rows += 1
                 self.detections += det is not None

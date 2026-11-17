@@ -8,10 +8,12 @@ from zeek_reader import read_log
 SAMPLE = Path(__file__).parent / "sample" / "conn.log"
 
 
-def row(src="10.0.0.9", start=1000, conns=5, ports=2, fail=0.0, share=0.5, top_port=80, host="10.0.0.2"):
+def row(src="10.0.0.9", start=1000, conns=5, ports=2, fail=0.0, share=0.5, top_port=80, host="10.0.0.2",
+        ssh_failed=0):
     return {"src_ip": src, "window_start": start, "n_conns": conns, "n_dst_ports": ports,
             "n_dst_hosts": 1, "fail_ratio": fail, "mean_duration": 1.0, "mean_bytes": 100.0,
-            "top_port_share": share, "top_port": top_port, "top_dst_host": host}
+            "top_port_share": share, "top_port": top_port, "top_dst_host": host,
+            "ssh_failed_auth": ssh_failed}
 
 
 class PortScanRuleTests(unittest.TestCase):
@@ -108,6 +110,57 @@ class DetectTests(unittest.TestCase):
     def test_level_mapping_matches_backend_thresholds(self):
         self.assertEqual([level_for(s) for s in (0.5, 0.69, 0.7, 0.89, 0.9, 1.0)],
                          ["low", "low", "medium", "medium", "high", "high"])
+
+
+class BruteForceFailedAuthTests(unittest.TestCase):
+    """Hydra gibi araçlar bir bağlantıdan çok deneme yapar: bağlantı sayısı küçük, deneme sayısı büyük."""
+
+    def hydra(self, failed, conns=4):
+        # 4 bağlantı: bağlantı eşiğinin (8) altında; hepsi SSH portunda.
+        return row(conns=conns, ports=1, share=1.0, top_port=22, ssh_failed=failed)
+
+    def test_connection_rule_alone_misses_it(self):
+        self.assertIsNone(brute_force(self.hydra(0)))
+
+    def test_failed_attempts_below_minimum_do_not_fire(self):
+        self.assertIsNone(brute_force(self.hydra(9)))
+
+    def test_minimum_case_scores_060(self):
+        score, reasons = brute_force(self.hydra(10))
+        self.assertAlmostEqual(score, 0.60)
+        self.assertIn("10 başarısız SSH parola denemesi", reasons[0])
+        self.assertIn("4 bağlantıda", reasons[0])
+
+    def test_score_grows_with_attempts_and_saturates(self):
+        scores = [brute_force(self.hydra(n))[0] for n in (10, 20, 30, 80)]
+        self.assertAlmostEqual(scores[1], 0.70)
+        self.assertEqual(scores, sorted(scores))
+        self.assertAlmostEqual(scores[2], 0.80)
+        self.assertAlmostEqual(scores[3], 0.80)
+
+    def test_applies_to_ssh_on_any_port(self):
+        # ssh.log protokolü tanır: SSH 2222'de çalışsa da parola denemeleri sayılır.
+        self.assertIsNotNone(brute_force(row(conns=3, share=1.0, top_port=2222, ssh_failed=15)))
+
+    def test_one_slip_does_not_fire(self):
+        # Meşru kullanıcı 3 kez yanlış girip sonra girdi: eşiğin çok altında.
+        self.assertIsNone(brute_force(self.hydra(2, conns=1)))
+
+    def test_higher_of_the_two_evidences_wins(self):
+        both = row(conns=20, ports=1, share=1.0, top_port=22, ssh_failed=12)
+        score, reasons = brute_force(both)
+        self.assertAlmostEqual(score, 0.70)                # bağlantı kanıtı: 0,5 + 0,2 x 1; deneme kanıtı: 0,6 + 0,2 x 0,1
+        self.assertIn("servisine 20 bağlantı", reasons[0])
+
+    def test_rows_without_ssh_column_still_work(self):
+        r = row(conns=10, ports=1, share=1.0, top_port=22)
+        del r["ssh_failed_auth"]
+        self.assertIsNotNone(brute_force(r))
+
+    def test_streak_bonus_applies_to_attempt_evidence(self):
+        found = detect([self.hydra(12), {**self.hydra(12), "window_start": 1010}])
+        self.assertEqual(len(found), 2)
+        self.assertGreater(found[1].risk_score, found[0].risk_score)
 
 
 class SampleScenarioTests(unittest.TestCase):

@@ -71,16 +71,34 @@ def target_summary(conns):
     }
 
 
-def extract(records, window=WINDOW_SECONDS):
+def failed_auth(ssh_record):
+    """Bir SSH bağlantısındaki BAŞARISIZ parola denemesi sayısı (Zeek ssh.log kaydından).
+
+    Zeek `auth_attempts` değerine başarılı denemeyi de sayar ("en az bir"). Bağlantı başarıyla
+    bittiyse (auth_success=T) son deneme başarılıydı, o yüzden bir eksiltilir. Zeek denemeyi
+    ayıramadıysa (auth_attempts boş) 0 sayılır.
+    """
+    attempts = ssh_record.get("auth_attempts") or 0
+    return max(0, attempts - (1 if ssh_record.get("auth_success") is True else 0))
+
+
+def extract(records, window=WINDOW_SECONDS, ssh_records=()):
     """Kayıtları (kaynak IP, pencere) ile gruplayıp her grup için bir satır döndürür.
 
     Dönen satırlar zamana, sonra kaynağa göre sıralıdır:
-        {"src_ip", "window_start", <FEATURES...>, "top_port", "top_dst_host"}
-    İlk iki alan kimlik, FEATURES sayısal özellikler, son ikisi meta bilgidir.
+        {"src_ip", "window_start", <FEATURES...>, "top_port", "top_dst_host", "ssh_failed_auth"}
+    İlk iki alan kimlik, FEATURES sayısal özellikler, son üçü meta bilgidir.
+
+    `ssh_records` (Zeek ssh.log) isteğe bağlıdır: verilirse `ssh_failed_auth` o penceredeki başarısız
+    parola denemesi toplamı olur, verilmezse 0. Bu bir FEATURES sütunu DEĞİLDİR (modelin girdisi
+    değil): conn.log'da görünmeyen bilgiyi (bir bağlantıdan çok deneme) kurallara taşır.
     """
     groups = defaultdict(list)
     for r in records:
         groups[(r["id.orig_h"], window_start(r["ts"], window))].append(r)
+    ssh_failed = defaultdict(int)
+    for r in ssh_records:
+        ssh_failed[(r["id.orig_h"], window_start(r["ts"], window))] += failed_auth(r)
 
     rows = []
     for (src_ip, start), conns in sorted(groups.items(), key=lambda kv: (kv[0][1], kv[0][0])):
@@ -89,5 +107,6 @@ def extract(records, window=WINDOW_SECONDS):
             "window_start": start,
             **compute_features(conns),
             **target_summary(conns),
+            "ssh_failed_auth": ssh_failed.get((src_ip, start), 0),
         })
     return rows

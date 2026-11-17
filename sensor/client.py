@@ -17,6 +17,7 @@ def build_event(det):
     features = {name: det.row[name] for name in FEATURES}
     features["window_start"] = det.window_start
     features["top_port"] = det.row["top_port"]
+    features["ssh_failed_auth"] = det.row.get("ssh_failed_auth", 0)
     return {
         "source_ip": det.src_ip,
         "target_host": det.row["top_dst_host"],

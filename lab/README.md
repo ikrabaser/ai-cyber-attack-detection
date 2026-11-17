@@ -54,7 +54,8 @@ docker compose -f lab/docker-compose.lab.yml stop zeek
 python lab/label_windows.py lab/data/conn.log lab/data/runs.jsonl --out lab/data/windows.csv
 ```
 Özet her koşu için pencere sayısını, yarım (boundary) pencereleri, kuralın tetiklediği pencereleri ve ilk
-tespite kadar geçen süreyi verir. `windows.csv` etiketli satırlardır (model eğitimi için ham veri).
+tespite kadar geçen süreyi verir (süre, koşu başından ilk tespit edilen pencerenin bitişine kadardır).
+`lab/data/ssh.log` varsa otomatik kullanılır (Hydra'nın bağlantı başına çok parola denemesini görmek için). `windows.csv` etiketli satırlardır (model eğitimi için ham veri).
 
 6. İstersen aynı log'u panele gönder (sensör ana makinede çalışır, lab ağına girmez):
 ```powershell
@@ -94,5 +95,6 @@ docker compose -f lab/docker-compose.lab.yml down
 - Zeek imajı varsayılan `zeek/zeek:lts`. İndirilemezse `$env:ZEEK_IMAGE="zeek/zeek:latest"` ile deneyin.
 - Zeek logunu hedefin arayüzünden okur; trafik hedefe gelip gidenle sınırlıdır (saldırgan ile normal istemci
   arasındaki trafik görülmez). Bu lab için yeterli.
-- Sensör şimdilik dosyayı bir kez okur (canlı izleme yok). Lab ölçümü için bu yeterli; canlı izleme sonraki adım.
+- Sensör dosyayı toplu okuyabilir ya da `--follow` ile canlı izleyebilir (yukarıda).
+- Hydra bir SSH bağlantısından 5 parola dener: `conn.log` tek başına yetmez, `ssh.log`'taki `auth_attempts` gerekir.
 - Pencereler sabit 10 sn'dir; koşunun başı ve sonu pencere sınırına denk gelmez, bu yüzden `boundary=1` satırlar olur.

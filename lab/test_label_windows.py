@@ -79,7 +79,8 @@ class SampleLogTests(unittest.TestCase):
         self.assertEqual((got["scan"]["windows"], got["scan"]["boundary_windows"], got["scan"]["detected_windows"]),
                          (1, 1, 1))
         self.assertEqual((got["brute"]["windows"], got["brute"]["detected_windows"]), (6, 6))
-        self.assertEqual(got["brute"]["first_detection_s"], 1.0)
+        # ilk tespit penceresi 1794301290-1794301300; süre pencere BİTİŞİnden ölçülür (1794301300 - 1794301289)
+        self.assertEqual(got["brute"]["first_detection_s"], 11.0)
         self.assertEqual((got["norm"]["windows"], got["norm"]["detected_windows"], got["norm"]["wrong_rule_windows"]),
                          (18, 0, 0))
         self.assertEqual(extra, {"unknown_windows": 0, "unknown_detected": 0})
@@ -96,6 +97,37 @@ class SampleLogTests(unittest.TestCase):
         labeled = lw.label_windows(list(read_log(SAMPLE)), runs)
         summary, _ = lw.summarize(labeled, runs)
         self.assertEqual((summary[0]["detected_windows"], summary[0]["wrong_rule_windows"]), (0, 1))
+
+
+class SshLogTests(unittest.TestCase):
+    """Hydra benzeri koşu: pencerede az bağlantı ama bağlantı başına 5 başarısız parola."""
+
+    SRC = "10.77.0.20"
+
+    def conns(self):
+        return [{"ts": 1000.0 + i * 2.0, "id.orig_h": self.SRC, "id.resp_h": "10.77.0.10", "id.resp_p": 22,
+                 "conn_state": "SF", "duration": 15.0, "orig_bytes": 500, "resp_bytes": 500} for i in range(4)]
+
+    def ssh(self):
+        return [{"ts": 1000.0 + i * 2.0, "id.orig_h": self.SRC, "auth_success": False, "auth_attempts": 5}
+                for i in range(4)]
+
+    def runs(self):
+        return [run("b", "brute_force", self.SRC, 995.0, 1040.0)]
+
+    def test_without_ssh_log_the_run_is_missed(self):
+        labeled = lw.label_windows(self.conns(), self.runs())
+        summary, _ = lw.summarize(labeled, self.runs())
+        self.assertEqual((summary[0]["windows"], summary[0]["detected_windows"]), (1, 0))
+        self.assertEqual(labeled[0]["ssh_failed_auth"], 0)
+
+    def test_with_ssh_log_the_run_is_detected(self):
+        labeled = lw.label_windows(self.conns(), self.runs(), ssh_records=self.ssh())
+        summary, _ = lw.summarize(labeled, self.runs())
+        self.assertEqual(labeled[0]["ssh_failed_auth"], 20)
+        self.assertEqual((summary[0]["detected_windows"], summary[0]["wrong_rule_windows"]), (1, 0))
+        # pencere 1000-1010, koşu 995'te başladı: 1010 - 995
+        self.assertEqual(summary[0]["first_detection_s"], 15.0)
 
 
 class MainTests(unittest.TestCase):
@@ -119,6 +151,34 @@ class MainTests(unittest.TestCase):
             self.assertEqual(list(rows[0].keys()), lw.COLUMNS)
             self.assertEqual(len(rows), 25)
             self.assertNotIn("10.77", open(out, encoding="utf-8").read())
+
+    def test_sibling_ssh_log_is_used_and_no_ssh_ignores_it(self):
+        import contextlib
+        import io
+        import json
+        conn_hdr = ("#separator \\x09\n#set_separator\t,\n#empty_field\t(empty)\n#unset_field\t-\n#path\tconn\n"
+                    "#fields\tts\tid.orig_h\tid.resp_h\tid.resp_p\tconn_state\tduration\torig_bytes\tresp_bytes\n"
+                    "#types\ttime\taddr\taddr\tport\tstring\tinterval\tcount\tcount\n")
+        ssh_hdr = ("#separator \\x09\n#set_separator\t,\n#empty_field\t(empty)\n#unset_field\t-\n#path\tssh\n"
+                   "#fields\tts\tid.orig_h\tauth_success\tauth_attempts\n#types\ttime\taddr\tbool\tcount\n")
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "conn.log").write_text(conn_hdr + "".join(
+                f"{1000 + i * 2.0}\t10.77.0.20\t10.77.0.10\t22\tSF\t15.0\t500\t500\n" for i in range(4)), encoding="utf-8")
+            Path(d, "ssh.log").write_text(ssh_hdr + "".join(
+                f"{1000 + i * 2.0}\t10.77.0.20\tF\t5\n" for i in range(4)), encoding="utf-8")
+            runs_path = os.path.join(d, "runs.jsonl")
+            Path(runs_path).write_text(json.dumps(run("b", "brute_force", "10.77.0.20", 995.0, 1040.0)) + "\n",
+                                       encoding="utf-8")
+            outs = []
+            for extra in ([], ["--no-ssh"]):
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    self.assertEqual(lw.main([os.path.join(d, "conn.log"), runs_path, *extra]), 0)
+                outs.append(buf.getvalue())
+            self.assertIn("4 SSH kaydı", outs[0])
+            self.assertIn("15.0 sn", outs[0])        # tespit edildi
+            self.assertNotIn("SSH kaydı", outs[1])
+            self.assertNotIn("15.0 sn", outs[1])     # ssh.log olmadan kaçırıldı
 
     def test_bad_runlog_gives_message_and_nonzero(self):
         import contextlib

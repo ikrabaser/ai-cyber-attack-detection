@@ -65,6 +65,7 @@ class ClientTests(unittest.TestCase):
         for name in FEATURES:
             self.assertIn(name, payload["features"])
         self.assertIn("window_start", payload["features"])
+        self.assertEqual(payload["features"]["ssh_failed_auth"], 0)  # ssh.log yokken 0
         json.dumps(payload)  # JSON'a çevrilebilir olmalı
 
     def test_send_event_success(self):

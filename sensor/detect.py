@@ -18,7 +18,7 @@ from datetime import datetime
 
 from client import DEFAULT_URL, build_event, send_event
 from features import WINDOW_SECONDS, extract
-from follow import LiveMonitor, tail_records
+from follow import LiveMonitor, LogTail
 from rules import detect
 from zeek_reader import read_log
 
@@ -32,8 +32,18 @@ def describe(det):
 def describe_row(row):
     """Kural tetiklenmese de pencerede ne olduğunu gösterir (--verbose)."""
     start = datetime.fromtimestamp(row["window_start"]).strftime("%H:%M:%S")
-    return (f"{start}  {row['src_ip']:15} pencere: {row['n_conns']} bağlantı, {row['n_dst_ports']} port, "
+    line = (f"{start}  {row['src_ip']:15} pencere: {row['n_conns']} bağlantı, {row['n_dst_ports']} port, "
             f"%{row['fail_ratio'] * 100:.0f} başarısız, en çok port {row['top_port']}")
+    if row.get("ssh_failed_auth"):
+        line += f", {row['ssh_failed_auth']} başarısız SSH parolası"
+    return line
+
+
+def ssh_log_path(args):
+    """Kullanılacak ssh.log yolu: --no-ssh ise None, --ssh-log verildiyse o, yoksa conn.log'un yanındaki ssh.log."""
+    if args.no_ssh:
+        return None
+    return args.ssh_log or os.path.join(os.path.dirname(args.path), "ssh.log")
 
 
 def follow(args, sleep=time.sleep, clock=time.monotonic, stop=lambda: False, out=sys.stdout, err=sys.stderr):
@@ -49,14 +59,19 @@ def follow(args, sleep=time.sleep, clock=time.monotonic, stop=lambda: False, out
         monitor.bad_lines += 1
         print(f"uyarı: {exc}", file=err)
 
-    print(f"{args.path} izleniyor (pencere {args.window} sn, kapanış beklemesi {args.grace:g} sn). "
-          f"Durdurmak için Ctrl+C.", file=out, flush=True)
-    code = 0
+    ssh_path = ssh_log_path(args)
+    conn_tail = LogTail(args.path, args.from_start, warn)
+    ssh_tail = LogTail(ssh_path, args.from_start, warn) if ssh_path else None
+    print(f"{args.path} izleniyor (pencere {args.window} sn, kapanış beklemesi {args.grace:g} sn)"
+          + (f"; SSH denemeleri için {ssh_path}" if ssh_path else "")
+          + ". Durdurmak için Ctrl+C.", file=out, flush=True)
     try:
-        for record in tail_records(args.path, args.poll, args.from_start, sleep, stop, on_error=warn):
-            if record is not None:
+        while not stop():
+            for record in conn_tail.read_new():
                 monitor.add(record)
-                continue
+            if ssh_tail:
+                for record in ssh_tail.read_new():
+                    monitor.add_ssh(record)
             for row, det in monitor.close_ready():
                 if det is None:
                     if args.verbose:
@@ -77,13 +92,18 @@ def follow(args, sleep=time.sleep, clock=time.monotonic, stop=lambda: False, out
                             return 1
                         stats["sent"] += 1
                 print(line, file=out, flush=True)
+            sleep(args.poll)
     except KeyboardInterrupt:
         print(file=out)
+    finally:
+        conn_tail.close()
+        if ssh_tail:
+            ssh_tail.close()
     print(f"{monitor.rows} pencere incelendi, {monitor.detections} tespit"
           + (f", {stats['sent']} gönderildi, {stats['failed']} gönderilemedi" if args.send else "")
           + f"; {monitor.late} kayıt geç geldiği için atlandı, {len(monitor.pending)} pencere beklemede "
           f"(gönderilmedi).", file=out)
-    return code
+    return 0
 
 
 def main(argv=None):
@@ -95,6 +115,8 @@ def main(argv=None):
     parser.add_argument("--token", default=os.environ.get("SENSOR_API_TOKEN", ""),
                         help="Bearer token (varsayılan: SENSOR_API_TOKEN ortam değişkeni)")
     parser.add_argument("--delay", type=float, default=0.0, help="gönderimler arası bekleme (sn)")
+    parser.add_argument("--ssh-log", help="Zeek ssh.log yolu (varsayılan: conn.log'un yanındaki ssh.log, varsa)")
+    parser.add_argument("--no-ssh", action="store_true", help="ssh.log'u kullanma (yalnızca conn.log'a bak)")
     parser.add_argument("--follow", action="store_true",
                         help="dosyayı canlı takip et (tail -f gibi); pencereler kapandıkça değerlendirilir")
     parser.add_argument("--from-start", action="store_true",
@@ -122,7 +144,17 @@ def main(argv=None):
     if args.follow:
         return follow(args)
 
-    rows = extract(read_log(args.path), window=args.window)
+    ssh_records = []
+    ssh_path = ssh_log_path(args)
+    if ssh_path and (args.ssh_log or os.path.exists(ssh_path)):
+        try:
+            ssh_records = list(read_log(ssh_path))
+        except (OSError, ValueError) as exc:
+            print(f"ssh.log okunamadı: {exc}", file=sys.stderr)
+            return 1
+        print(f"{ssh_path}: {len(ssh_records)} SSH kaydı kullanıldı")
+
+    rows = extract(read_log(args.path), window=args.window, ssh_records=ssh_records)
     found = detect(rows, window=args.window)
     print(f"{len(rows)} pencere incelendi, {len(found)} tespit\n")
 

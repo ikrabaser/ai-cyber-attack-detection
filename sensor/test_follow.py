@@ -21,6 +21,17 @@ HEADER = (
 )
 
 
+SSH_HEADER = (
+    "#separator \\x09\n#set_separator\t,\n#empty_field\t(empty)\n#unset_field\t-\n#path\tssh\n"
+    "#fields\tts\tid.orig_h\tauth_success\tauth_attempts\n"
+    "#types\ttime\taddr\tbool\tcount\n"
+)
+
+
+def ssh_line(ts, src="10.0.0.9", success="F", attempts=5):
+    return f"{ts}\t{src}\t{success}\t{attempts}\n"
+
+
 def line(ts, src="10.0.0.9", dst="10.0.0.2", port=22, state="SF"):
     return f"{ts}\t{src}\t{dst}\t{port}\t{state}\t1.0\t100\t100\n"
 
@@ -137,6 +148,28 @@ class LiveMonitorTests(unittest.TestCase):
         self.assertEqual([key(d) for d in live], [key(d) for d in batch])
         self.assertGreater(len(live), 0)
 
+    def test_ssh_records_add_failed_attempts_to_the_window(self):
+        for i in range(4):
+            self.mon.add(conn(1000 + i * 2.0, "10.77.0.20"))
+            self.mon.add_ssh({"ts": 1000 + i * 2.0, "id.orig_h": "10.77.0.20",
+                              "auth_success": False, "auth_attempts": 5})
+        self.clock.t = 1000.0
+        (row, det), = self.mon.close_ready()
+        self.assertEqual(row["ssh_failed_auth"], 20)
+        self.assertEqual(det.attack_type, "brute_force")
+
+    def test_late_ssh_record_is_dropped_and_counted(self):
+        self.burst(1000)
+        self.clock.t = 1000.0
+        self.mon.close_ready()
+        self.mon.add_ssh({"ts": 1005.0, "id.orig_h": "10.0.0.9", "auth_success": False, "auth_attempts": 5})
+        self.assertEqual(self.mon.late, 1)
+
+    def test_ssh_record_alone_does_not_start_the_clock_or_make_a_row(self):
+        self.mon.add_ssh({"ts": 1000.0, "id.orig_h": "10.0.0.9", "auth_success": False, "auth_attempts": 5})
+        self.clock.t = 100000.0
+        self.assertEqual(self.mon.close_ready(), [])
+
 
 class TailRecordsTests(unittest.TestCase):
     def gen(self, path, **kw):
@@ -208,9 +241,13 @@ class TailRecordsTests(unittest.TestCase):
 class FollowCommandTests(unittest.TestCase):
     """detect.follow uçtan uca: sahte saat, gerçek dosya, sahte backend."""
 
-    def run_follow(self, steps, send=True, send_effect=None, verbose=False, ticks=8):
+    def run_follow(self, steps, send=True, send_effect=None, verbose=False, ticks=8, ssh_steps=None):
         path = tmp_path()
         append(path, HEADER)
+        ssh_path = None
+        if ssh_steps is not None:
+            ssh_path = tmp_path()
+            append(ssh_path, SSH_HEADER)
         clock, count = Clock(), [0]
 
         def sleep(_):
@@ -218,9 +255,12 @@ class FollowCommandTests(unittest.TestCase):
             clock.t += 5
             if count[0] in steps:
                 append(path, steps[count[0]])
+            if ssh_steps and count[0] in ssh_steps:
+                append(ssh_path, ssh_steps[count[0]])
 
         args = Namespace(path=path, window=10, grace=8.0, poll=0.5, from_start=False, send=send,
-                         url="http://x/api/events/", token="t", verbose=verbose)
+                         url="http://x/api/events/", token="t", verbose=verbose,
+                         ssh_log=ssh_path, no_ssh=ssh_path is None)
         out, err = io.StringIO(), io.StringIO()
         with mock.patch("detect.send_event") as fake:
             fake.side_effect = send_effect or (lambda *a, **k: (201, {"status": "created"}))
@@ -272,6 +312,85 @@ class FollowCommandTests(unittest.TestCase):
         _, out, _, _ = self.run_follow({1: quiet})
         self.assertNotIn("2 bağlantı, 1 port", out)
         self.assertIn("1 pencere incelendi, 0 tespit", out)
+
+    # Hydra benzeri saldırı: pencerede yalnızca 4 bağlantı (kuralın bağlantı eşiği 8'in altında),
+    # ama her bağlantıda 5 başarısız parola denemesi.
+    HYDRA_CONNS = "".join(line(1000 + i * 2.0, src="10.77.0.20") for i in range(4))
+    HYDRA_SSH = "".join(ssh_line(1000 + i * 2.0, src="10.77.0.20") for i in range(4))
+
+    def test_connection_count_alone_misses_a_slow_multiplexing_tool(self):
+        _, out, _, fake = self.run_follow({1: self.HYDRA_CONNS})
+        self.assertEqual(fake.call_count, 0)
+
+    def test_failed_ssh_attempts_catch_it(self):
+        code, out, _, fake = self.run_follow({1: self.HYDRA_CONNS}, ssh_steps={1: self.HYDRA_SSH})
+        self.assertEqual(fake.call_count, 1)
+        payload = fake.call_args.args[2]
+        self.assertEqual((payload["source_ip"], payload["attack_type"]), ("10.77.0.20", "brute_force"))
+        self.assertEqual(payload["features"]["ssh_failed_auth"], 20)
+        self.assertIn("20 başarısız SSH parola denemesi", payload["summary"])
+
+    def test_ssh_log_appearing_later_is_picked_up(self):
+        # Zeek ssh.log'u ilk SSH bağlantısında oluşturur: izleme başlarken dosya yok.
+        path = tmp_path()
+        append(path, HEADER)
+        ssh_path = tmp_path()
+        Path(ssh_path).unlink()
+        clock, count = Clock(), [0]
+
+        def sleep(_):
+            count[0] += 1
+            clock.t += 5
+            if count[0] == 1:
+                append(path, self.HYDRA_CONNS)
+                append(ssh_path, SSH_HEADER + self.HYDRA_SSH)
+
+        args = Namespace(path=path, window=10, grace=8.0, poll=0.5, from_start=False, send=False,
+                         url="", token="", verbose=False, ssh_log=ssh_path, no_ssh=False)
+        out = io.StringIO()
+        detect.follow(args, sleep=sleep, clock=clock, stop=lambda: count[0] >= 8, out=out, err=io.StringIO())
+        self.assertIn("20 başarısız SSH parola denemesi", out.getvalue())
+
+
+class BatchSshLogTests(unittest.TestCase):
+    """detect.py dosya modu: conn.log'un yanındaki ssh.log otomatik kullanılır."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        (self.dir / "conn.log").write_text(
+            HEADER + "".join(line(1000 + i * 2.0, src="10.77.0.20") for i in range(4)), encoding="utf-8")
+
+    def write_ssh(self):
+        (self.dir / "ssh.log").write_text(
+            SSH_HEADER + "".join(ssh_line(1000 + i * 2.0, src="10.77.0.20") for i in range(4)), encoding="utf-8")
+
+    def run_main(self, *extra):
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out), mock.patch("sys.stderr", io.StringIO()):
+            code = detect.main([str(self.dir / "conn.log"), *extra])
+        return code, out.getvalue()
+
+    def test_sibling_ssh_log_is_used_automatically(self):
+        self.write_ssh()
+        code, out = self.run_main()
+        self.assertEqual(code, 0)
+        self.assertIn("4 SSH kaydı kullanıldı", out)
+        self.assertIn("brute_force", out)
+        self.assertIn("20 başarısız SSH parola denemesi", out)
+
+    def test_without_ssh_log_same_traffic_is_missed(self):
+        code, out = self.run_main()
+        self.assertIn("0 tespit", out)
+
+    def test_no_ssh_flag_ignores_the_file(self):
+        self.write_ssh()
+        _, out = self.run_main("--no-ssh")
+        self.assertIn("0 tespit", out)
+        self.assertNotIn("SSH kaydı", out)
+
+    def test_explicit_missing_ssh_log_is_an_error(self):
+        code, _ = self.run_main("--ssh-log", str(self.dir / "yok.log"))
+        self.assertEqual(code, 1)
 
 
 class FollowArgsTests(unittest.TestCase):

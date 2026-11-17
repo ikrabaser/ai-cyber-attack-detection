@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from extract_features import write_csv
-from features import FEATURES, compute_features, extract, window_start
+from features import FEATURES, compute_features, extract, failed_auth, window_start
 from zeek_reader import read_log
 
 SAMPLE = Path(__file__).parent / "sample" / "conn.log"
@@ -21,6 +21,45 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(window_start(1794301200.0, 10), 1794301200)  # sınır bir sonraki pencereye ait
         self.assertEqual(window_start(1794301209.999, 10), 1794301200)
         self.assertEqual(window_start(17, 5), 15)
+
+
+class FailedAuthTests(unittest.TestCase):
+    def test_failed_connection_counts_all_attempts(self):
+        self.assertEqual(failed_auth({"auth_success": False, "auth_attempts": 5}), 5)
+
+    def test_successful_login_does_not_count_the_last_attempt(self):
+        self.assertEqual(failed_auth({"auth_success": True, "auth_attempts": 1}), 0)
+        self.assertEqual(failed_auth({"auth_success": True, "auth_attempts": 3}), 2)  # 2 yanlış, sonra doğru
+
+    def test_unknown_outcome_and_missing_attempts(self):
+        self.assertEqual(failed_auth({"auth_success": None, "auth_attempts": 2}), 2)
+        self.assertEqual(failed_auth({"auth_success": None, "auth_attempts": 0}), 0)
+        self.assertEqual(failed_auth({"auth_success": None, "auth_attempts": None}), 0)
+        self.assertEqual(failed_auth({}), 0)
+
+
+class SshFailedAuthColumnTests(unittest.TestCase):
+    def ssh(self, ts, src="10.0.0.9", success=False, attempts=5):
+        return {"ts": ts, "id.orig_h": src, "auth_success": success, "auth_attempts": attempts}
+
+    def test_summed_per_source_and_window(self):
+        conns = [conn(ts=1000.0), conn(ts=1012.0), conn(ts=1001.0, src="10.0.0.5")]
+        ssh = [self.ssh(1000.5), self.ssh(1003.0), self.ssh(1012.5, attempts=2), self.ssh(1001.0, src="10.0.0.5", attempts=1)]
+        rows = {(r["src_ip"], r["window_start"]): r for r in extract(conns, window=10, ssh_records=ssh)}
+        self.assertEqual(rows[("10.0.0.9", 1000)]["ssh_failed_auth"], 10)
+        self.assertEqual(rows[("10.0.0.9", 1010)]["ssh_failed_auth"], 2)
+        self.assertEqual(rows[("10.0.0.5", 1000)]["ssh_failed_auth"], 1)
+
+    def test_defaults_to_zero_without_ssh_records(self):
+        (row,) = extract([conn()], window=10)
+        self.assertEqual(row["ssh_failed_auth"], 0)
+
+    def test_is_metadata_not_a_model_feature(self):
+        # Modelin girdisi sabit 7 sütun; ssh bilgisi yalnızca kurallara gider.
+        self.assertNotIn("ssh_failed_auth", FEATURES)
+
+    def test_ssh_record_without_connection_makes_no_row(self):
+        self.assertEqual(extract([], window=10, ssh_records=[self.ssh(1000.0)]), [])
 
 
 class ComputeFeaturesTests(unittest.TestCase):

@@ -9,8 +9,12 @@ Her kural bir özellik satırına (Kademe 2) bakar, tetiklenirse (skor, nedenler
 
   port_scan    : bir pencerede çok sayıda FARKLI porta dokunmak.
                  skor = 0,55 + 0,25 x port bolluğu + 0,20 x başarısız oran
-  brute_force  : bir giriş servisine (SSH, RDP...) kısa sürede çok sayıda bağlantı.
-                 skor = 0,50 + 0,20 x bağlantı bolluğu
+  brute_force  : iki kanıttan biri (ikisi de varsa yüksek skorlu olan):
+                 (a) bir giriş servisine (SSH, RDP...) kısa sürede çok sayıda BAĞLANTI.
+                     skor = 0,50 + 0,20 x bağlantı bolluğu
+                 (b) Zeek ssh.log'a göre çok sayıda BAŞARISIZ PAROLA DENEMESİ. Hydra gibi araçlar bir
+                     bağlantıdan birkaç deneme yapar; (a) bunu göremez, (b) doğrudan sayar.
+                     skor = 0,60 + 0,20 x deneme bolluğu (doğrudan kanıt: taban daha yüksek)
 
 Tek pencere kanıtı zayıf olabilir (brute force'un ilk penceresi ~0,53). Ama saldırı sürdükçe
 şüphe artmalı: aynı kaynakta aynı kural ART ARDA pencerelerde tetikleniyorsa her ardışık
@@ -33,6 +37,9 @@ SCAN_FULL_AT_EXTRA = 30      # 10 + 30 = 40 port ve üstünde "port bolluğu" ta
 BRUTE_MIN_CONNS = 8          # penceredeki en az bağlantı sayısı
 BRUTE_MIN_PORT_SHARE = 0.9   # bağlantıların en az %90'ı aynı giriş servisine
 BRUTE_FULL_AT_EXTRA = 12     # 8 + 12 = 20 bağlantı ve üstünde "bolluk" tam sayılır
+
+SSH_MIN_FAILED = 10          # bir pencerede en az bu kadar başarısız SSH parola denemesi
+SSH_FULL_AT_EXTRA = 20       # 10 + 20 = 30 deneme ve üstünde "bolluk" tam sayılır
 
 STREAK_BONUS = 0.10
 STREAK_BONUS_MAX = 0.40
@@ -72,18 +79,32 @@ def port_scan(row):
     ]
 
 
-def brute_force(row):
+def _brute_by_connections(row):
     port = row["top_port"]
     if (port not in AUTH_PORTS
             or row["top_port_share"] < BRUTE_MIN_PORT_SHARE
             or row["n_conns"] < BRUTE_MIN_CONNS):
         return None
     abundance = min(1.0, (row["n_conns"] - BRUTE_MIN_CONNS) / BRUTE_FULL_AT_EXTRA)
-    score = 0.50 + 0.20 * abundance
-    return score, [
+    return 0.50 + 0.20 * abundance, [
         f"{AUTH_PORTS[port]} ({port}) servisine {row['n_conns']} bağlantı "
         f"(bağlantıların %{row['top_port_share'] * 100:.0f}'i aynı porta)",
     ]
+
+
+def _brute_by_failed_auth(row):
+    failed = row.get("ssh_failed_auth", 0)
+    if failed < SSH_MIN_FAILED:
+        return None
+    abundance = min(1.0, (failed - SSH_MIN_FAILED) / SSH_FULL_AT_EXTRA)
+    return 0.60 + 0.20 * abundance, [
+        f"{failed} başarısız SSH parola denemesi (Zeek ssh.log), {row['n_conns']} bağlantıda",
+    ]
+
+
+def brute_force(row):
+    hits = [h for h in (_brute_by_connections(row), _brute_by_failed_auth(row)) if h]
+    return max(hits, key=lambda h: h[0]) if hits else None
 
 
 RULES = {"port_scan": port_scan, "brute_force": brute_force}

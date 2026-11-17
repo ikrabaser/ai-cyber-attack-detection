@@ -111,7 +111,19 @@ Modeller gelmeden önce hattı uçtan uca kuruyoruz. Karar verici şimdilik elle
 | Kural | Ne zaman tetiklenir | Temel skor |
 |---|---|---|
 | `port_scan` | pencerede ≥ 10 farklı port | 0,55 + 0,25 × port bolluğu + 0,20 × başarısız oran |
-| `brute_force` | ≥ 8 bağlantı, ≥ %90'ı aynı giriş servisine (SSH, RDP, FTP, Telnet, VNC) | 0,50 + 0,20 × bağlantı bolluğu |
+| `brute_force` (bağlantı) | ≥ 8 bağlantı, ≥ %90'ı aynı giriş servisine (SSH, RDP, FTP, Telnet, VNC) | 0,50 + 0,20 × bağlantı bolluğu |
+| `brute_force` (parola) | pencerede ≥ 10 **başarısız SSH parola denemesi** (Zeek `ssh.log`) | 0,60 + 0,20 × deneme bolluğu (30 denemede tam) |
+
+İki brute force kanıtından yüksek skorlu olan kullanılır. İkincisi laboratuvarda gerekti: Hydra bir SSH
+bağlantısından 5 parola dener (`ssh.log`'da `auth_attempts=5`), 202 sn'lik koşu `conn.log`'da yalnızca 21
+bağlantı olarak göründü ve 10 sn'de en çok 5 bağlantı verdi. Bağlantı sayan kural (eşik 8) bunu hiç
+yakalamadı; parola denemelerini doğrudan sayan kural yakalar.
+
+**`ssh.log` nasıl kullanılır:** `conn.log`'un yanında `ssh.log` varsa otomatik okunur (`--ssh-log YOL` ile
+başka dosya, `--no-ssh` ile kapatma). Başarısız deneme = `auth_attempts`, bağlantı başarıyla bittiyse bir
+eksiği (son deneme doğruydu). Toplam, pencerenin `ssh_failed_auth` alanına yazılır. Bu alan **modelin girdisi
+(FEATURES) değildir**, yalnızca kurallara ve olay ayrıntısına gider: model sütunları sabit kalır, ayrıca
+CIC-IDS2017'de karşılığı yok. ssh.log yokken alan 0'dır ve davranış eskisiyle aynıdır.
 
 **Israr (persistence) bonusu:** Tek pencere zayıf kanıt olabilir (brute force'un ilk penceresi 0,53).
 Aynı kaynakta aynı kural **art arda** pencerelerde tetiklenirse her ardışık pencere +0,10 ekler (en fazla +0,40);
@@ -175,9 +187,9 @@ Nasıl çalışır ve neye dikkat etmeli:
 - `read_conn_log.py`: dosyayı özetleyen komut (Kademe 1).
 - `features.py`: pencere başına 7 özelliği hesaplayan fonksiyonlar (Kademe 2).
 - `extract_features.py`: özellik tablosunu gösteren / CSV'ye yazan komut (Kademe 2).
-- `rules.py`: iki kural + ısrar bonusu (Kademe 3).
+- `rules.py`: kurallar (port taraması, brute force: bağlantı ve parola kanıtı) + ısrar bonusu (Kademe 3).
 - `client.py`: tespiti backend'in JSON biçimine çevirir ve `POST /api/events/` ile yollar (Kademe 3).
 - `detect.py`: conn.log → özellik → kural → (isteğe bağlı) backend komutu (Kademe 3); `--follow` ile canlı.
 - `follow.py`: dosyayı takip eden `tail_records` ve pencereleri kapatan `LiveMonitor` (canlı izleme).
 - `sample/conn.log`: sentetik örnek.
-- `test_zeek_reader.py`, `test_features.py`, `test_rules.py`, `test_client.py`, `test_follow.py`: testler (74).
+- `test_zeek_reader.py`, `test_features.py`, `test_rules.py`, `test_client.py`, `test_follow.py`: testler (100).

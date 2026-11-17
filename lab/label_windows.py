@@ -8,6 +8,12 @@ Etiket kuralı: bir pencere, kaynak IP'si bir koşunun kaynağıyla aynıysa ve 
 `unknown` olur (ölçümden ve eğitimden hariç tutulmalı). Koşunun başında ya da sonunda yarım kalan pencere
 ile iki koşunun örtüştüğü pencere `boundary=1` işaretlenir: o pencerede koşunun trafiği seyreltilmiştir.
 
+Conn.log'un yanında ssh.log varsa (Zeek SSH çözümleyicisi) otomatik kullanılır: kural, bağlantı sayısına
+ek olarak başarısız parola denemelerini de sayar (`ssh_failed_auth` sütunu). `--no-ssh` ile kapatılır.
+
+"İlk tespit" süresi, koşu başlangıcından ilk tespit edilen pencerenin BİTİŞİne kadardır: sensör
+pencere bitmeden hüküm veremez (canlı modda buna `--grace` de eklenir).
+
 Özetteki "pencere" sayısı sensörün gerçekte gördüğü pencere sayısıdır; ısrar eşiğini (ardışık pencere)
 ayarlamak için bu sayıya bakılır. Etiketin tek kaynağı koşu günlüğüdür; kuralların kararı yalnızca
 karşılaştırma için `detected` sütununa yazılır.
@@ -28,7 +34,8 @@ from runlog import read_runs  # noqa: E402
 from zeek_reader import read_log  # noqa: E402
 
 UNKNOWN = "unknown"
-COLUMNS = ["run_id", "label", "boundary", "src_ip", "window_start", *FEATURES, "detected", "risk"]
+COLUMNS = ["run_id", "label", "boundary", "src_ip", "window_start", *FEATURES, "ssh_failed_auth",
+           "detected", "risk"]
 
 
 def _overlap(start, end, run):
@@ -49,9 +56,9 @@ def label_row(row, runs, window):
     return run["run_id"], run["label"], boundary
 
 
-def label_windows(records, runs, window=WINDOW_SECONDS):
-    """conn.log kayıtları ve koşular -> etiketli pencere satırları (kural kararı dahil)."""
-    rows = extract(records, window=window)
+def label_windows(records, runs, window=WINDOW_SECONDS, ssh_records=()):
+    """conn.log (+ ssh.log) kayıtları ve koşular -> etiketli pencere satırları (kural kararı dahil)."""
+    rows = extract(records, window=window, ssh_records=ssh_records)
     found = {(d.src_ip, d.window_start): d for d in detect(rows, window=window)}
     out = []
     for row in rows:
@@ -64,14 +71,17 @@ def label_windows(records, runs, window=WINDOW_SECONDS):
             "src_ip": row["src_ip"],
             "window_start": row["window_start"],
             **{f: row[f] for f in FEATURES},
+            "ssh_failed_auth": row["ssh_failed_auth"],
             "detected": det.attack_type if det else "",
             "risk": round(det.risk_score, 3) if det else "",
         })
     return out
 
 
-def summarize(labeled, runs):
-    """Koşu başına: pencere sayısı, yarım pencere sayısı, kural tetiklenen pencere, ilk tespite kadar süre."""
+def summarize(labeled, runs, window=WINDOW_SECONDS):
+    """Koşu başına: pencere sayısı, yarım pencere sayısı, kural tetiklenen pencere, ilk tespite kadar süre.
+
+    İlk tespit süresi = ilk tespit edilen pencerenin bitişi - koşu başlangıcı (hep pozitif)."""
     per_run = {}
     for r in labeled:
         per_run.setdefault(r["run_id"], []).append(r)
@@ -88,7 +98,7 @@ def summarize(labeled, runs):
             "boundary_windows": sum(r["boundary"] for r in rows),
             "detected_windows": len(hits),
             "wrong_rule_windows": sum(1 for r in rows if r["detected"] and r["detected"] != run["label"]),
-            "first_detection_s": round(hits[0]["window_start"] - run["start"], 1) if hits else None,
+            "first_detection_s": round(hits[0]["window_start"] + window - run["start"], 1) if hits else None,
         })
     unknown = [r for r in labeled if r["label"] == UNKNOWN]
     return summary, {
@@ -120,6 +130,8 @@ def main(argv=None):
     parser.add_argument("runs", help="koşu günlüğü (JSONL)")
     parser.add_argument("-w", "--window", type=int, default=WINDOW_SECONDS, help="pencere uzunluğu (sn)")
     parser.add_argument("--out", help="etiketli pencereleri bu CSV dosyasına yaz")
+    parser.add_argument("--ssh-log", help="Zeek ssh.log (varsayılan: conn.log'un yanındaki ssh.log, varsa)")
+    parser.add_argument("--no-ssh", action="store_true", help="ssh.log'u kullanma")
     args = parser.parse_args(argv)
     if args.window < 1:
         parser.error("pencere en az 1 sn olmalı")
@@ -128,9 +140,17 @@ def main(argv=None):
     except (OSError, ValueError) as exc:
         print(f"Koşu günlüğü okunamadı: {exc}", file=sys.stderr)
         return 1
-    labeled = label_windows(read_log(args.conn_log), runs, window=args.window)
-    summary, extra = summarize(labeled, runs)
-    print(f"{len(labeled)} pencere, {len(runs)} koşu\n")
+    ssh_path = None if args.no_ssh else (args.ssh_log or str(Path(args.conn_log).with_name("ssh.log")))
+    ssh_records = []
+    if ssh_path and (args.ssh_log or Path(ssh_path).exists()):
+        try:
+            ssh_records = list(read_log(ssh_path))
+        except (OSError, ValueError) as exc:
+            print(f"ssh.log okunamadı: {exc}", file=sys.stderr)
+            return 1
+    labeled = label_windows(read_log(args.conn_log), runs, window=args.window, ssh_records=ssh_records)
+    summary, extra = summarize(labeled, runs, window=args.window)
+    print(f"{len(labeled)} pencere, {len(runs)} koşu" + (f", {len(ssh_records)} SSH kaydı" if ssh_records else "") + "\n")
     print(format_summary(summary, extra))
     if args.out:
         write_csv(args.out, labeled)
