@@ -7,3 +7,7 @@ venv/
 .pytest_cache/
 *.patch
 backend/kararlar.*
+
+# Lab çıktıları (conn.log, koşu günlüğü, etiketli CSV)
+lab/data/*
+!lab/data/.gitkeep

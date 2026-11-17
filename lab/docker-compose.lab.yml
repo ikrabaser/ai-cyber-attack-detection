@@ -1,0 +1,75 @@
+# Laboratuvar: izole ağda hedef, saldırgan ve normal trafik; Zeek hedefin ağ arayüzünü dinler.
+#
+# Çalıştır (repo kökünden):  docker compose -f lab/docker-compose.lab.yml up -d --build
+# Ayrıntı: lab/README.md
+#
+# GÜVENLİK: labnet `internal: true` olduğu için bu ağdaki konteynerler internete ve ana makine ağına
+# çıkamaz. Hiçbir servise `ports:` verilmez. lab/test_compose_safety.py bu iki kuralı denetler.
+
+name: siber-lab
+
+services:
+  target:
+    build:
+      context: .
+      dockerfile: target/Dockerfile
+    networks:
+      labnet:
+        ipv4_address: 10.77.0.10
+
+  # Zeek ayrı bir ağa girmez: hedefle AYNI ağ arayüzünü paylaşır (network_mode), böylece hedefe
+  # gelen ve giden bütün trafiği görür. -C: sanal arayüzlerdeki sağlama toplamı uyarılarını yok sayar.
+  zeek:
+    image: ${ZEEK_IMAGE:-zeek/zeek:lts}
+    network_mode: "service:target"
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    working_dir: /logs
+    command: ["zeek", "-C", "-i", "eth0"]
+    stop_grace_period: 30s
+    volumes:
+      - ./data:/logs
+    depends_on:
+      - target
+
+  attacker:
+    build:
+      context: .
+      dockerfile: attacker/Dockerfile
+    command: ["sleep", "infinity"]
+    environment:
+      LAB_SRC_IP: 10.77.0.20
+      LAB_TARGET_IP: 10.77.0.10
+      LAB_RUNLOG: /runs/runs.jsonl
+    volumes:
+      - ./data:/runs
+    networks:
+      labnet:
+        ipv4_address: 10.77.0.20
+    depends_on:
+      - target
+
+  normal:
+    build:
+      context: .
+      dockerfile: normal/Dockerfile
+    command: ["sleep", "infinity"]
+    environment:
+      LAB_SRC_IP: 10.77.0.30
+      LAB_TARGET_IP: 10.77.0.10
+      LAB_RUNLOG: /runs/runs.jsonl
+    volumes:
+      - ./data:/runs
+    networks:
+      labnet:
+        ipv4_address: 10.77.0.30
+    depends_on:
+      - target
+
+networks:
+  labnet:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.77.0.0/24

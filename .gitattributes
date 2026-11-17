@@ -1,0 +1,3 @@
+# Konteynerde çalışan dosyalar Windows'ta CRLF olmasın (kabuk betiği ve parola listesi bozulur)
+*.sh text eol=lf
+lab/attacker/wordlist.txt text eol=lf

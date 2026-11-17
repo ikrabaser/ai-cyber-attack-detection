@@ -8,7 +8,7 @@ ilerliyoruz; her kademede çalışan ve anlaşılır bir şey var.
 | 1 | Zeek `conn.log` okumak | tamam |
 | 2 | Özellik çıkarma (zaman penceresi başına sayılar) | tamam |
 | 3 | Kural tabanlı skor → backend → panel | **tamam** |
-| 4 | Lab + gerçek saldırılar, etiketli veri | |
+| 4 | Lab + gerçek saldırılar, etiketli veri | iskelet hazır, `lab/` (ilk çalıştırma bekleniyor) |
 | 5 | XGBoost | |
 | 6 | Autoencoder | |
 | 7 | Karar tablosu ve eşikler | |

@@ -222,13 +222,15 @@ saldırgan kontrollü metinlerin (HTML/script) etkisiz kalması.
 
 Henüz denenmeyenler:
 
-1. **Gerçek ağ trafiği:** olaylar şimdilik `emit_test_event` ile üretiliyor; sensör, modeller ve
-   gerçek güvenlik duvarı arka ucu yok.
+1. **Gerçek ağ trafiği:** olaylar şimdilik `emit_test_event` ile üretiliyor; modeller ve gerçek güvenlik duvarı
+   arka ucu yok. Laboratuvar iskeleti (`lab/`: izole ağ, hedef, nmap/Hydra saldırganı, normal trafik, Zeek) yazıldı
+   ve birim testleri geçiyor, ama Docker imajları ve Zeek henüz çalıştırılıp denenmedi; ilk çalıştırma bekleniyor.
 
 ## Sonraki adımlar
 
-1. Lab: izole VM'ler, Zeek, `conn.log` → özellik çıkarma → `POST /api/events/`.
-   Kademe kademe ilerliyor, bkz. [`sensor/README.md`](sensor/README.md) (Kademe 1: `conn.log` okuyucu, Kademe 2: pencere başına özellikler, Kademe 3: kural tabanlı skor ve backend'e gönderim hazır).
+1. Lab: izole Docker ağı, Zeek, `conn.log` → özellik çıkarma → `POST /api/events/`. İskelet ve çalıştırma adımları
+   [`lab/README.md`](lab/README.md)'de; sensör kademeleri [`sensor/README.md`](sensor/README.md)'de (Kademe 1-3 hazır,
+   Kademe 4 lab ilk çalıştırması bekleniyor).
 2. XGBoost baseline, ardından Autoencoder; karar tablosu ve eşikler (PR eğrisi).
 3. Claude agent: `core/agent.py` içindeki `RuleAgent` yerine, araçları `core.actions` üzerinden geçen agent.
 4. Gerçek güvenlik duvarı arka ucu (lab ağ geçidi) ve kontrollü saldırı senaryoları ile ölçüm.
