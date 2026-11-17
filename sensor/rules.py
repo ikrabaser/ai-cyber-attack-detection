@@ -17,8 +17,12 @@ Her kural bir özellik satırına (Kademe 2) bakar, tetiklenirse (skor, nedenler
                      skor = 0,60 + 0,20 x deneme bolluğu (doğrudan kanıt: taban daha yüksek)
 
 Tek pencere kanıtı zayıf olabilir (brute force'un ilk penceresi ~0,53). Ama saldırı sürdükçe
-şüphe artmalı: aynı kaynakta aynı kural ART ARDA pencerelerde tetikleniyorsa her ardışık
-pencere skora +0,10 ekler (en fazla +0,40). Buna "ısrar (persistence)" bonusu diyoruz.
+şüphe artmalı: aynı kaynakta aynı kural tekrar tekrar tetikleniyorsa her tekrar skora +0,10
+ekler (en fazla +0,40). Buna "ısrar (persistence)" bonusu diyoruz. Tekrarlar peş peşe olmak
+zorunda değil: araya o kaynaktan HİÇ kayıt gelmeyen pencereler girebilir (en çok 9 pencere = 90 sn),
+çünkü Hydra gibi araçlar bağlantıyı uzun açık tutar ve Zeek bağlantıyı BAŞLADIĞI pencereye yazar:
+200 sn'lik bir saldırı 40-60 sn arayla 5 ayrı patlama gibi görünür. Araya o kaynaktan kuralı
+tetiklemeyen bir kayıt girerse (kaynak o pencerede başka türlü davrandı) zincir yine kopar.
 
 Kurallar bilerek SÜREYE (mean_duration) bakmaz: Kademe 2'de gördük, tek bir uzun meşru bağlantı
 ortalamayı şişirip yanlış alarm üretiyordu.
@@ -41,6 +45,8 @@ BRUTE_FULL_AT_EXTRA = 12     # 8 + 12 = 20 bağlantı ve üstünde "bolluk" tam 
 SSH_MIN_FAILED = 10          # bir pencerede en az bu kadar başarısız SSH parola denemesi
 SSH_FULL_AT_EXTRA = 20       # 10 + 20 = 30 deneme ve üstünde "bolluk" tam sayılır
 
+STREAK_MAX_GAP_WINDOWS = 9   # iki tetiklenme arası en çok bu kadar pencere (varsayılan 10 sn: 90 sn) geçebilir
+
 STREAK_BONUS = 0.10
 STREAK_BONUS_MAX = 0.40
 
@@ -49,6 +55,9 @@ MEDIUM_AT, HIGH_AT = 0.7, 0.9
 
 
 def level_for(score):
+    # Backend skoru 4 hanede yuvarlanmış alır (client.build_event); aynı yuvarlama, yoksa 0,7 + 0,2 gibi
+    # kayan nokta toplamları (0,8999999...) eşiğin hemen altında kalıp sensörde "medium", backend'de "high" olurdu.
+    score = round(score, 4)
     return "high" if score >= HIGH_AT else "medium" if score >= MEDIUM_AT else "low"
 
 
@@ -120,7 +129,7 @@ class Detector:
 
     def __init__(self, window=WINDOW_SECONDS):
         self.window = window
-        self.streaks = {}  # (kaynak, kural) -> (son pencere başlangıcı, ardışık sayısı)
+        self.streaks = {}  # (kaynak, kural) -> (son tetiklenen pencere başlangıcı, tetiklenme sayısı)
 
     def feed(self, row):
         """Bir satır -> o (kaynak, pencere) için tetiklenen kuralların en yüksek skorlusu, yoksa None."""
@@ -134,14 +143,15 @@ class Detector:
 
             base, reasons = hit
             prev = self.streaks.get(key)
-            consecutive = prev is not None and row["window_start"] == prev[0] + self.window
-            count = prev[1] + 1 if consecutive else 1
+            gap = row["window_start"] - prev[0] if prev is not None else None
+            continues = gap is not None and 0 < gap <= STREAK_MAX_GAP_WINDOWS * self.window
+            count = prev[1] + 1 if continues else 1
             self.streaks[key] = (row["window_start"], count)
 
             bonus = min(STREAK_BONUS_MAX, STREAK_BONUS * (count - 1))
             score = min(1.0, base + bonus)
             if count > 1:
-                reasons = [*reasons, f"{count}. ardışık pencere (+{bonus:.2f})"]
+                reasons = [*reasons, f"{count}. tetiklenen pencere (+{bonus:.2f})"]
             if best is None or score > best.risk_score:
                 best = Detection(row["src_ip"], row["window_start"], name, score, reasons, row)
         return best

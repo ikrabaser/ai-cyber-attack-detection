@@ -106,7 +106,7 @@ class LiveMonitorTests(unittest.TestCase):
         self.assertEqual([r["window_start"] for r, _ in results], [1000, 1010])
         first, second = results[0][1], results[1][1]
         self.assertGreater(second.risk_score, first.risk_score)
-        self.assertIn("2. ardışık pencere", second.reasons[-1])
+        self.assertIn("2. tetiklenen pencere", second.reasons[-1])
 
     def test_late_record_is_dropped_and_counted(self):
         self.burst(1000)

@@ -126,8 +126,12 @@ eksiği (son deneme doğruydu). Toplam, pencerenin `ssh_failed_auth` alanına ya
 CIC-IDS2017'de karşılığı yok. ssh.log yokken alan 0'dır ve davranış eskisiyle aynıdır.
 
 **Israr (persistence) bonusu:** Tek pencere zayıf kanıt olabilir (brute force'un ilk penceresi 0,53).
-Aynı kaynakta aynı kural **art arda** pencerelerde tetiklenirse her ardışık pencere +0,10 ekler (en fazla +0,40);
-araya sessiz bir pencere girerse zincir kopar. Böylece saldırı sürdükçe risk tırmanır.
+Aynı kaynakta aynı kural tekrar tetiklenirse her tekrar +0,10 ekler (en fazla +0,40). Tekrarlar peş peşe
+olmak zorunda değil: iki tetiklenme arasında o kaynaktan hiç kayıt gelmeyen en çok 9 pencere (90 sn) geçebilir.
+Neden: Hydra bağlantıyı 9-40 sn açık tutar ve Zeek bağlantıyı **başladığı** pencereye yazar; lab'daki 200 sn'lik
+koşu 40-60 sn arayla 5 ayrı patlama gibi göründü ve ardışıklık isteyen zincir hiç kurulmadı (4 pencere de 0,70'te
+kaldı). Araya o kaynaktan kuralı tetiklemeyen bir kayıt girerse (kaynak o pencerede başka türlü davrandı) zincir
+yine kopar. Böylece saldırı sürdükçe risk tırmanır. Düzey eşikleri backend'le aynı yuvarlamayla (4 hane) hesaplanır.
 
 Kurallar bilerek `mean_duration`'a bakmaz (Kademe 2'deki 9,5 sn'lik aykırı değer yüzünden).
 
@@ -192,4 +196,4 @@ Nasıl çalışır ve neye dikkat etmeli:
 - `detect.py`: conn.log → özellik → kural → (isteğe bağlı) backend komutu (Kademe 3); `--follow` ile canlı.
 - `follow.py`: dosyayı takip eden `tail_records` ve pencereleri kapatan `LiveMonitor` (canlı izleme).
 - `sample/conn.log`: sentetik örnek.
-- `test_zeek_reader.py`, `test_features.py`, `test_rules.py`, `test_client.py`, `test_follow.py`: testler (100).
+- `test_zeek_reader.py`, `test_features.py`, `test_rules.py`, `test_client.py`, `test_follow.py`: testler (103).

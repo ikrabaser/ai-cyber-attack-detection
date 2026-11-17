@@ -79,11 +79,28 @@ class DetectTests(unittest.TestCase):
         self.assertAlmostEqual(scores[0], base)
         self.assertAlmostEqual(scores[1], base + 0.10)
         self.assertAlmostEqual(scores[2], base + 0.20)
-        self.assertIn("3. ardışık pencere", found[2].reasons[-1])
+        self.assertIn("3. tetiklenen pencere", found[2].reasons[-1])
 
-    def test_gap_resets_the_streak(self):
-        found = detect([self.burst(1000), self.burst(1030)])  # arada boş pencereler var
-        self.assertAlmostEqual(found[0].risk_score, found[1].risk_score)
+    def test_short_gap_of_empty_windows_keeps_the_streak(self):
+        # Hydra: bağlantılar uzun açık kalır, yeni bağlantı 40-60 sn arayla başlar; arada o kaynaktan kayıt yok.
+        found = detect([self.burst(1000), self.burst(1030)])
+        self.assertAlmostEqual(found[1].risk_score, found[0].risk_score + 0.10)
+        self.assertIn("2. tetiklenen pencere", found[1].reasons[-1])
+
+    def test_gap_of_exactly_nine_windows_keeps_and_ten_resets(self):
+        kept = detect([self.burst(1000), self.burst(1090)])
+        self.assertAlmostEqual(kept[1].risk_score, kept[0].risk_score + 0.10)
+        reset = detect([self.burst(1000), self.burst(1100)])
+        self.assertAlmostEqual(reset[1].risk_score, reset[0].risk_score)
+
+    def test_hydra_like_bursts_climb_to_high(self):
+        # Gerçek lab verisi: 840, 900, 940, 990, 1030 (başlangıçlar arası 40-60 sn), pencere başına 20 başarısız parola.
+        rows = [row(start=1794945000 + off, conns=4, ports=1, share=1.0, top_port=22, ssh_failed=20)
+                for off in (0, 60, 100, 150, 190)]
+        scores = [d.risk_score for d in detect(rows)]
+        self.assertEqual([round(x, 2) for x in scores], [0.70, 0.80, 0.90, 1.00, 1.00])
+        self.assertEqual(level_for(scores[0]), "medium")
+        self.assertEqual(level_for(scores[2]), "high")
 
     def test_quiet_window_in_between_resets_the_streak(self):
         quiet = row(start=1010, conns=3, ports=1, share=1.0, top_port=22)
@@ -106,6 +123,11 @@ class DetectTests(unittest.TestCase):
         both = row(conns=40, ports=40, fail=0.95, share=1.0, top_port=22)  # her iki kural da tetiklenir
         (d,) = detect([both])
         self.assertEqual(d.attack_type, "port_scan")
+
+    def test_level_uses_the_same_rounding_as_the_backend(self):
+        self.assertLess(0.7 + 0.2, 0.9)  # kayan nokta: 0.8999999999999999
+        self.assertEqual(level_for(0.7 + 0.2), "high")
+        self.assertEqual(level_for(0.6 + 0.1), "medium")
 
     def test_level_mapping_matches_backend_thresholds(self):
         self.assertEqual([level_for(s) for s in (0.5, 0.69, 0.7, 0.89, 0.9, 1.0)],
