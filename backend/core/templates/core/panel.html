@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <title>Saldırı Tespit Paneli</title>
 <link rel="icon" href="data:,">
+<script nonce="{{ csp_nonce }}">(()=>{let mode='system';try{mode=localStorage.getItem('soc-theme')||'system';}catch{}if(!['dark','light','system'].includes(mode))mode='system';document.documentElement.dataset.theme=mode==='system'?(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):mode;})();</script>
 <style nonce="{{ csp_nonce }}">
 :root {
   --bg: #0e1116; --panel: #161b22; --panel-2: #1c232d; --line: #2a323d;
@@ -182,12 +183,31 @@ section.card>h2{padding:16px 18px;font-weight:550}.chartbox{background:#101b24}.
 @media(max-width:900px){.wrap{padding:0 14px 25px}.soc-grid{grid-template-columns:1fr 1fr}.soc-grid>section:last-child{grid-column:1/-1;border-top:1px solid var(--line)}.soc-heading{align-items:flex-start;flex-direction:column}.soc-viewport{min-height:320px}.soc-nav{gap:19px}.soc-stage-foot{align-items:flex-start;flex-direction:column}}
 @media(max-width:540px){.kpis{grid-template-columns:1fr 1fr;row-gap:16px}.kpis>.kpi:nth-child(3){padding-left:0}.soc-grid{grid-template-columns:1fr}.soc-grid>section{border-right:0;border-bottom:1px solid var(--line)}.soc-stage{overflow:auto}.soc-viewport{min-width:650px}.soc-empty-map{left:12%;right:12%}.soc-heading h2{font-size:23px}.soc-footer{flex-direction:column}.soc-nav{margin-bottom:16px}}
 
+/* SOC workspace v2 — themes, event drawer, browser-local asset aliases */
+:root[data-theme="dark"]{color-scheme:dark;--bg:#080e13;--panel:#0d151d;--panel-2:#111d27;--line:#20303c;--text:#e3edf3;--muted:#8b9fac;--ok:#55caa0;--warn:#e5b768;--bad:#ee7776;--info:#6fcac6;--stage:#080f15;--world-fill:#101e24;--world-line:#3b7b7e;--node-fill:#0d242d;--node-line:#679fa6;--hover:#15232c;--active:#163439;--meter:#5d999d;--veil:#0008}
+:root[data-theme="light"]{color-scheme:light;--bg:#f3f6f8;--panel:#fff;--panel-2:#eaf0f3;--line:#d3dfe5;--text:#192e3b;--muted:#526b79;--ok:#167b5b;--warn:#96610c;--bad:#bb4346;--info:#126e78;--stage:#edf3f6;--world-fill:#e0eaed;--world-line:#729da4;--node-fill:#fff;--node-line:#287682;--hover:#e8f0f4;--active:#dceef0;--meter:#397e88;--veil:#17374a38}
+.soc-stage{background:var(--stage)}.soc-world{fill:var(--world-fill);stroke:var(--world-line)}.soc-empty-map{background:var(--stage)}.soc-controls .active{background:var(--active);color:var(--info);border-color:var(--info)}.soc-meter{background:var(--line)}.soc-meter i{background:var(--meter)}.chartbox{background:var(--panel-2)}tbody tr:hover{background:var(--hover)}
+.soc-theme{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}.soc-theme select,.soc-field input{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:7px 10px}.soc-theme select:focus-visible,.soc-field input:focus-visible{outline:2px solid var(--info);outline-offset:2px}.soc-recent-row .soc-open-event{color:var(--info);border:0;background:none;cursor:pointer;font:inherit;padding:0;text-align:left}
+.soc-dialog{color:var(--text);background:var(--panel);border:1px solid var(--line);padding:0;box-shadow:0 12px 65px #0003;max-width:calc(100vw - 24px);max-height:90dvh;width:660px;border-radius:8px}.soc-dialog::backdrop{background:var(--veil)}.soc-dialog[open]{display:block}.soc-dialog-head{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--line);gap:16px}.soc-dialog-head h2{font-size:19px;margin:4px 0 0}.soc-dialog-body{padding:22px 24px}.soc-drawer{inset:0 0 0 auto;margin:0;width:440px;max-width:100vw;max-height:100dvh;height:100dvh;border-radius:0;border-block:0;border-right:0}.soc-drawer .soc-dialog-head{position:sticky;top:0;background:var(--panel);z-index:2}.soc-drawer dl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;font-size:12px;margin:22px 0}.soc-drawer dt{color:var(--muted)}.soc-drawer dd{margin:0;overflow-wrap:anywhere}.soc-drawer h3{font-size:12px;margin:24px 0 10px;letter-spacing:.5px}.soc-summary{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;color:var(--text);line-height:1.7;background:var(--panel-2);padding:14px;border-radius:4px}.soc-event-actions{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}.soc-related{width:100%;display:flex;justify-content:space-between;gap:8px;padding:12px 0;border:0;border-bottom:1px solid var(--line);background:none;color:var(--text);font:inherit;text-align:left;cursor:pointer}.soc-related:hover{color:var(--info)}.soc-field{display:grid;gap:6px;font-size:12px;color:var(--muted)}.soc-asset-form{display:grid;grid-template-columns:1fr 1fr auto;align-items:end;gap:12px;margin:20px 0}.soc-asset-form input{width:100%;min-width:0}.soc-asset-form .btn{padding:8px 13px}.soc-alias-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line);font-size:12px}.soc-alias-row span{overflow-wrap:anywhere}.soc-alias-buttons{display:flex;gap:8px}.soc-note{font-size:12px;color:var(--muted);line-height:1.7}.soc-links{padding:14px 0 0}.soc-links summary{cursor:pointer;color:var(--muted);font-size:12px}.soc-links-list{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.soc-links-list .btn{font-size:11px;white-space:normal;text-align:left}.soc-save-status{min-height:20px;font-size:12px;color:var(--info)}
+@media(prefers-reduced-motion:no-preference){.soc-drawer[open]{animation:soc-slide .18s ease-out}@keyframes soc-slide{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}}
+@media(max-width:600px){.soc-asset-form{grid-template-columns:1fr}.soc-alias-row{grid-template-columns:1fr 1fr}.soc-alias-buttons{grid-column:1/-1}.soc-dialog-body,.soc-dialog-head{padding:18px}}
+
+/* SOC workspace v3 — refined light surfaces and collision-aware map labels */
+:root[data-theme="light"]{--bg:#f6f7f9;--panel:#ffffff;--panel-2:#f7f9fb;--line:#e0e6ec;--text:#1d2c3a;--muted:#5d6c7b;--ok:#177656;--warn:#996010;--bad:#bf4650;--info:#176a79;--stage:#fbfcfe;--world-fill:#edf2f5;--world-line:#bccbd3;--node-fill:#fff;--node-line:#3b7c87;--hover:#f1f5f8;--active:#e9f3f5;--meter:#548d98;--label-bg:#ffffffed}
+:root[data-theme="dark"]{--label-bg:#0d151de8}
+body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.top h1{font-size:19px}.soc-nav{gap:26px;margin-bottom:18px}.soc-nav button{font-size:13px;padding:12px 0}.soc-heading{margin-bottom:14px;gap:14px}.soc-heading h2{font-size:25px;line-height:1.25;margin:4px 0}.soc-eyebrow{font-size:10px;letter-spacing:1.7px}.soc-sub{font-size:12px;line-height:1.55;margin:4px 0}.soc-controls .btn{font-size:12px;padding:8px 12px}.soc-controls{gap:8px}.soc-theme{font-size:12px}
+.kpis{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:14px 4px;margin-bottom:12px}.kpis>.kpi,.kpis>.kpi:first-child{padding:0 20px}.kpi .n{font-size:29px;font-weight:600;letter-spacing:-.5px}.kpi .l{font-size:12px;margin-top:5px}.soc-scope{font-size:11px;margin:0 0 18px;line-height:1.5}.soc-stage{border-radius:7px}.soc-viewport{max-width:1320px;margin:0 auto;min-height:280px;aspect-ratio:12/5}.soc-stage::before{opacity:.16;background-size:90px 90px}.soc-stage:has(.soc-world:not([hidden]))::before{display:none}.soc-world{stroke-width:.65;opacity:1}.soc-notice{top:15px;left:18px;font-size:10px;letter-spacing:.2px}.soc-demo-notice{background:var(--panel);border:1px solid var(--line);padding:6px 9px;border-radius:3px;color:var(--warn)}.soc-stage-foot{padding:12px 18px;background:var(--panel);font-size:12px}.soc-legend{gap:18px}.soc-empty-map{background:var(--panel);border-radius:6px;padding:24px;line-height:1.7}.soc-empty-map strong{font-size:18px}.soc-grid{background:var(--panel);border-radius:7px;margin-top:15px}.soc-grid>section{padding:20px}.soc-grid h3{font-size:11px;letter-spacing:1.2px;color:var(--muted)}.soc-rank-row{font-size:13px;margin:14px 0}.soc-meter{height:4px;background:var(--panel-2)}.soc-meter i{height:4px}.soc-recent-row{font-size:12px;padding:11px 0;grid-template-columns:74px minmax(0,1.1fr) minmax(0,1fr)}.soc-links{padding-top:12px}.soc-links summary{font-size:12px}.soc-footer{font-size:12px}.soc-dialog-head h2{font-weight:600}.soc-drawer dl{font-size:13px;gap:14px}.soc-related{font-size:13px}.soc-alias-row{font-size:13px}.soc-field{font-size:13px}.soc-field input{padding:9px 11px}.table-wrap th{font-size:12px}.table-wrap td{font-size:13px}.chartbox{border-color:var(--line)}
+:root[data-theme="light"] .soc-stage{box-shadow:0 2px 6px #19334b04}:root[data-theme="light"] .soc-nav button[aria-selected=true]{font-weight:600}:root[data-theme="light"] .soc-controls .active{border-color:#91b8c0}:root[data-theme="light"] .soc-meter{background:#e9eff3}:root[data-theme="light"] .chip{border-color:transparent}:root[data-theme="light"] .pill{background:white}
+@media(max-width:900px){.soc-heading{gap:12px}.soc-controls .btn{padding:8px 10px}.soc-grid>section{padding:16px}.soc-viewport{min-height:280px}}
+@media(max-width:540px){.kpis>.kpi,.kpis>.kpi:first-child,.kpis>.kpi:nth-child(3){padding:0 14px}.kpis>.kpi:nth-child(2){border-right:0}.soc-heading h2{font-size:23px}.soc-stage-foot{font-size:11px}.soc-controls{gap:6px}.soc-grid h3{font-size:11px}.soc-recent-row{font-size:11px}.soc-scope{font-size:11px}.soc-viewport{min-width:650px}}
+
 </style>
 </head>
-<body>
+<body data-soc-user="{{ username }}">
 <div class="wrap">
   <header class="top">
     <h1>Saldırı Tespit Paneli</h1>
+    <label class="soc-theme">Tema <select id="soc-theme-select" aria-label="Görünüm teması"><option value="system">Sistem</option><option value="dark">Koyu</option><option value="light">Açık</option></select></label>
     <span id="conn" class="pill" role="status" aria-live="polite"><span class="dot"></span><span id="conn-text">Bağlanıyor…</span></span>
     <span class="pill" title="{{ mode_label }}">Kademe: <b>{{ mode }}</b></span>
     <span class="who">{{ username }} · <a href="/admin/">Yönetim</a></span>
@@ -203,7 +223,7 @@ section.card>h2{padding:16px 18px;font-weight:550}.chartbox{background:#101b24}.
 </nav>
 <div id="soc-heading" class="soc-heading">
 <div><span class="soc-eyebrow">GÜVENLİK OPERASYONLARI</span><h2 id="soc-title">Ağınızdaki hareketi izleyin.</h2><p id="soc-subtitle" class="soc-sub">Gerçek olay kayıtları · Kaynaktan hedefe görünürlük</p></div>
-<div class="soc-controls"><button class="btn" id="soc-refresh" type="button">Veriyi yenile</button><span id="soc-clock" class="mono"></span></div>
+<div class="soc-controls"><button class="btn" id="soc-assets-open" type="button">Varlık isimleri</button><button class="btn" id="soc-refresh" type="button">Veriyi yenile</button><span id="soc-clock" class="mono"></span></div>
 </div>
 
 
@@ -225,6 +245,7 @@ section.card>h2{padding:16px 18px;font-weight:550}.chartbox{background:#101b24}.
 <div class="soc-notice" id="soc-map-notice">GEÇMİŞ + CANLI KAYITLAR · HAREKET, SALDIRININ SÜRDÜĞÜ ANLAMINA GELMEZ</div>
 <div class="soc-empty-map" id="soc-map-empty" hidden></div>
 </div><div class="soc-stage-foot"><div class="soc-legend"><b>Yüksek risk</b><b>Orta risk</b><b>Düşük risk</b></div><span id="soc-map-count">Veriler bekleniyor…</span></div></div>
+<details class="soc-links"><summary>Bağlantıları listeden incele</summary><div id="soc-links-list" class="soc-links-list"></div></details>
 <div class="soc-grid"><section><h3>KAYNAKLAR</h3><div id="soc-sources"></div></section><section><h3>SALDIRI TÜRLERİ</h3><div id="soc-types"></div></section><section><h3>SON OLAYLAR <span id="soc-data-badge" class="soc-sub">/ GERÇEK VERİ</span></h3><div id="soc-recent"></div></section></div>
 </div>
 
@@ -412,6 +433,16 @@ section.card>h2{padding:16px 18px;font-weight:550}.chartbox{background:#101b24}.
     <div id="events-empty" class="empty" hidden>Henüz olay yok.</div>
   </section>
 </div>
+<dialog id="soc-event-dialog" class="soc-dialog soc-drawer" aria-labelledby="soc-event-title">
+<header class="soc-dialog-head"><div><span class="soc-eyebrow" id="soc-event-id">OLAY AYRINTISI</span><h2 id="soc-event-title">Bağlantı ayrıntısı</h2></div><button type="button" class="btn" id="soc-event-close" aria-label="Olay ayrıntısını kapat">Kapat</button></header>
+<div class="soc-dialog-body"><div id="soc-event-tags" class="soc-controls"></div><dl id="soc-event-fields"></dl><h3>OLAY / AJAN ÖZETİ</h3><div id="soc-event-summary" class="soc-summary"></div><div id="soc-event-actions" class="soc-event-actions"></div><h3>AYNI KAYNAK VE HEDEFİN SON OLAYLARI</h3><div id="soc-event-related"></div><p class="soc-note">Ayrıntılar yüklenen olay kayıtlarından alınır. Hareketli çizgi, saldırının halen sürdüğü anlamına gelmez.</p></div>
+</dialog>
+<dialog id="soc-assets-dialog" class="soc-dialog" aria-labelledby="soc-assets-title">
+<header class="soc-dialog-head"><div><span class="soc-eyebrow">GÖRÜNÜM AYARLARI</span><h2 id="soc-assets-title">Varlık isimleri</h2></div><button type="button" class="btn" id="soc-assets-close">Kapat</button></header>
+<div class="soc-dialog-body"><p class="soc-note">IP veya hedef adına bir etiket ekleyin. Örneğin: 10.77.0.10 → Web sunucusu. Etiketler bu tarayıcıda, bu kullanıcı için saklanır; sunucudaki olay kayıtları değişmez.</p>
+<form id="soc-asset-form" class="soc-asset-form"><label class="soc-field">IP / hedef adı<input id="soc-asset-address" maxlength="160" required list="soc-asset-options" autocomplete="off" placeholder="10.77.0.10"></label><label class="soc-field">Görünen isim<input id="soc-asset-name" maxlength="48" required autocomplete="off" placeholder="Web sunucusu"></label><button class="btn" type="submit">Kaydet</button></form><datalist id="soc-asset-options"></datalist><p id="soc-asset-status" class="soc-save-status" role="status"></p><div id="soc-alias-list"></div></div>
+</dialog>
+
 <div id="toasts" aria-live="polite"></div>
 
 {{ config|json_script:"panel-config" }}
@@ -777,7 +808,7 @@ section.card>h2{padding:16px 18px;font-weight:550}.chartbox{background:#101b24}.
 
   // Tıklanabilir IP: metin yalnızca textContent ile basılır.
   function ipLink(ip) {
-    const b = el('button', { cls: 'linkbtn mono', text: ip, title: 'Bu kaynağın zaman çizelgesini aç', attrs: { type: 'button' } });
+    const b = el('button', { cls: 'linkbtn mono', text: socName(ip), title: String(ip) + ' · Bu kaynağın zaman çizelgesini aç', attrs: { type: 'button' } });
     b.addEventListener('click', () => openSource(ip));
     return b;
   }
@@ -1605,6 +1636,7 @@ section.card>h2{padding:16px 18px;font-weight:550}.chartbox{background:#101b24}.
       $('soc-map-count').textContent=`${rows.length} ${soc.demo?'örnek':'yüklenen'} olay · ${soc.routes.length} kaynak–hedef çifti · En çok 8 kaynak / 8 hedef`;
       if(!rows.length){empty.hidden=false;empty.append(el('strong',{text:'Olay bekleniyor.'}),document.createTextNode('Sensör verisi geldiğinde bağlantılar burada görünecek.'));}
     }
+    socV2Refresh();
     socDraw();
   }
   function socDraw() {
@@ -1615,21 +1647,45 @@ section.card>h2{padding:16px 18px;font-weight:550}.chartbox{background:#101b24}.
     const c=canvas.getContext('2d');c.setTransform(w/1200,0,0,h/500,0,0);c.clearRect(0,0,1200,500);
     const phase=soc.clock/5000,reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if(soc.mode==='local') {
-      c.font='11px monospace';c.fillStyle='#7a909f';c.textAlign='center';c.fillText('KAYNAKLAR',240,73);c.fillText('HEDEFLER',960,73);
-      c.strokeStyle='#263a46';c.setLineDash([2,7]);c.beginPath();c.moveTo(600,95);c.lineTo(600,430);c.stroke();c.setLineDash([]);
-      c.fillStyle='#78919d';c.fillText('ŞEMATİK · COĞRAFİ KONUM DEĞİL',600,465);
+      c.font='11px monospace';c.fillStyle=socPaint.muted;c.textAlign='center';c.fillText('KAYNAKLAR',240,73);c.fillText('HEDEFLER',960,73);
+      c.strokeStyle=socPaint.line;c.setLineDash([2,7]);c.beginPath();c.moveTo(600,95);c.lineTo(600,430);c.stroke();c.setLineDash([]);
+      c.fillStyle=socPaint.muted;c.fillText('ŞEMATİK · COĞRAFİ KONUM DEĞİL',600,465);
     }
     const point=(a,b,q,t)=>[(1-t)**2*a[0]+2*(1-t)*t*q[0]+t*t*b[0],(1-t)**2*a[1]+2*(1-t)*t*q[1]+t*t*b[1]];
     soc.routes.forEach((e,i)=>{
       const a=e.from,b=e.to,q=[(a[0]+b[0])/2,Math.max(45,Math.min(a[1],b[1])-(soc.mode==='global'?70:30+i%4*14))];
-      const color={high:'#ef7b78',medium:'#e2b86d',low:'#67c8c3'}[e.risk_level]||'#67c8c3';
-      c.strokeStyle=color;c.globalAlpha=.32;c.lineWidth=1;c.beginPath();c.moveTo(...a);c.quadraticCurveTo(...q,...b);c.stroke();
+      const color={high:socPaint.high,medium:socPaint.medium,low:socPaint.low}[e.risk_level]||socPaint.low;
+      c.strokeStyle=color;c.globalAlpha=document.documentElement.dataset.theme==='light'?.68:.42;c.lineWidth=1.25;c.beginPath();c.moveTo(...a);c.quadraticCurveTo(...q,...b);c.stroke();
       if(!reduce){const t=(phase+i*.19)%1; c.globalAlpha=.9;c.lineWidth=2;c.beginPath();for(let k=0;k<=10;k++){const p=point(a,b,q,Math.max(0,t-k*.008));if(!k)c.moveTo(...p);else c.lineTo(...p);}c.stroke();const p=point(a,b,q,t);c.fillStyle=color;c.beginPath();c.arc(...p,2.8,0,Math.PI*2);c.fill();
       const r=5+(phase*1.7+i*.17)%1*23;c.globalAlpha=.45*(1-(r-5)/23);c.beginPath();c.arc(...b,r,0,Math.PI*2);c.stroke();}
       c.globalAlpha=1;
     });
-    c.font='12px monospace';
-    soc.nodes.forEach(n=>{c.fillStyle='#0d242d';c.strokeStyle='#679fa6';c.lineWidth=1;c.beginPath();c.arc(...n.p,5,0,Math.PI*2);c.fill();c.stroke();const left=soc.mode==='local'&&n.p[0]<600;c.textAlign=left?'right':'left';const text=n.label.length>34?n.label.slice(0,31)+'…':n.label;const x=n.p[0]+(left?-14:14);c.fillStyle='#deebee';c.fillText(text,Math.max(12,Math.min(x,1180-c.measureText(text).width*(left?0:1))),n.p[1]+4);});
+    // Place one label per endpoint; prefer readable offsets rather than overlaps.
+    const seenNodes=new Set(), uniqueNodes=[];
+    for(const n of soc.nodes){const key=JSON.stringify([n.label,Math.round(n.p[0]*10),Math.round(n.p[1]*10)]);if(!seenNodes.has(key)){seenNodes.add(key);uniqueNodes.push(n);}}
+    const taken=[];
+    soc.labelHits=[];
+    c.font='12px system-ui, -apple-system, Segoe UI, sans-serif';c.textAlign='left';
+    const overlaps=(a,b)=>a.x<b.x+b.w+6&&a.x+a.w+6>b.x&&a.y<b.y+b.h+5&&a.y+a.h+5>b.y;
+    const dots=uniqueNodes.map(n=>({x:n.p[0]-7,y:n.p[1]-7,w:14,h:14}));
+    uniqueNodes.forEach(n=>{
+      c.fillStyle=socPaint.node;c.strokeStyle=socPaint.nodeLine;c.lineWidth=1.35;
+      c.beginPath();c.arc(...n.p,4.5,0,Math.PI*2);c.fill();c.stroke();
+      const name=soc.demo?n.label:socName(n.label);
+      const text=name.length>36?name.slice(0,33)+'…':name;
+      const width=c.measureText(text).width+16,height=24,[nx,ny]=n.p;
+      const left=soc.mode==='local'&&nx<600;
+      const offsets=left?[[-width-13,-12],[13,-12],[-width-13,-40],[13,20],[-width-13,20],[13,-40]]:[[13,-12],[13,20],[-width-13,-12],[13,-40],[-width-13,20],[-width-13,-40],[13,48],[-width-13,-68]];
+      let box=null;
+      for(const [dx,dy] of offsets){const candidate={x:nx+dx,y:ny+dy,w:width,h:height};if(candidate.x<10||candidate.x+width>1190||candidate.y<40||candidate.y+height>450)continue;if(taken.some(b=>overlaps(candidate,b))||dots.some(b=>overlaps(candidate,b)))continue;box=candidate;break;}
+      if(!box)return; // Endpoint and accessible connection list remain available.
+      taken.push(box);
+      const anchorX=box.x>nx?box.x:box.x+box.w,anchorY=Math.max(box.y+5,Math.min(ny,box.y+box.h-5));
+      c.globalAlpha=.5;c.strokeStyle=socPaint.nodeLine;c.lineWidth=.7;c.beginPath();c.moveTo(nx,ny);c.lineTo(anchorX,anchorY);c.stroke();c.globalAlpha=1;
+      c.fillStyle=socPaint.labelBg;c.beginPath();c.roundRect(box.x,box.y,box.w,box.h,3);c.fill();
+      c.fillStyle=socPaint.text;c.fillText(text,box.x+8,box.y+16);
+      soc.labelHits.push({...box,node:n});
+    });
   }
   let socLastPaint = 0;
   function socTick(now){
@@ -1651,12 +1707,99 @@ section.card>h2{padding:16px 18px;font-weight:550}.chartbox{background:#101b24}.
     $('soc-demo').addEventListener('click',()=>{soc.demo=!soc.demo;$('soc-demo').textContent=soc.demo?'Demoyu kapat':'Demoyu aç';$('soc-demo').setAttribute('aria-pressed',String(soc.demo));$('soc-demo').classList.toggle('active',soc.demo);socRefresh();});
     $('soc-pause').addEventListener('click',()=>{soc.paused=!soc.paused;$('soc-pause').textContent=soc.paused?'Animasyonu sürdür':'Animasyonu duraklat';$('soc-pause').setAttribute('aria-pressed',String(soc.paused));});
     $('soc-refresh').addEventListener('click',()=>{loadSnapshot();loadStats();if(filterActive())loadFiltered();});
-    $('soc-canvas').addEventListener('click',e=>{if(soc.demo||soc.mode!=='local')return;const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*1200,y=(e.clientY-r.top)/r.height*500;const n=soc.nodes.find(n=>n.ip&&Math.abs(n.p[1]-y)<18&&x>30&&x<260);if(n)openSource(n.ip);});
+    $('soc-canvas').addEventListener('click',socMapClick);
     new ResizeObserver(socDraw).observe($('soc-viewport'));
     const clock=()=>{$('soc-clock').textContent=new Date().toLocaleTimeString('tr-TR');};clock();setInterval(clock,1000);
     socShow('overview');socRefresh();soc.frame=requestAnimationFrame(socTick);
   }
 
+  // SOC v2: Only presentation preferences are persisted; no event data is stored.
+  let socPaint = {};
+  let socAssetNames = new Map();
+  let socSelectedEvent = null;
+  let socDrawerFocus = null;
+  const socAssetStorageKey = 'soc-assets:v1:' + (document.body.dataset.socUser || 'user');
+  function socName(address) {const a=String(address||'Bilinmiyor');const name=socAssetNames.get(a);return name?`${name} · ${a}`:a;}
+  function socThemeApply(mode,save=true) {
+    if(!['dark','light','system'].includes(mode))mode='system';
+    const resolved=mode==='system'?(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):mode;
+    document.documentElement.dataset.theme=resolved;
+    $('soc-theme-select').value=mode;
+    if(save){try{localStorage.setItem('soc-theme',mode);}catch{toast('Tema uygulandı; tarayıcı depolaması kapalı olduğu için hatırlanamayacak.','warn');}}
+    socPaint={text:cssVar('--text'),muted:cssVar('--muted'),line:cssVar('--line'),high:cssVar('--bad'),medium:cssVar('--warn'),low:cssVar('--info'),node:cssVar('--node-fill'),nodeLine:cssVar('--node-line'),labelBg:cssVar('--label-bg')};
+    destroyCharts();renderStats();renderSource();socDraw();
+  }
+  function socCurve(e,i){return [(e.from[0]+e.to[0])/2,Math.max(45,Math.min(e.from[1],e.to[1])-(soc.mode==='global'?70:30+i%4*14))];}
+  function socCurvePoint(e,i,t){const a=e.from,b=e.to,q=socCurve(e,i);return [(1-t)**2*a[0]+2*(1-t)*t*q[0]+t*t*b[0],(1-t)**2*a[1]+2*(1-t)*t*q[1]+t*t*b[1]];}
+  function socPickEvent(event,opener) {
+    socSelectedEvent={...event};socRenderDrawer();
+    const dialog=$('soc-event-dialog');
+    if(!dialog.open){socDrawerFocus=opener||document.activeElement;dialog.showModal();}
+  }
+  function socRenderDrawer(){
+    if(!socSelectedEvent)return;
+    const demo=Number(socSelectedEvent.id)<0;
+    const e=demo?socSelectedEvent:(events.get(socSelectedEvent.id)||socSelectedEvent);
+    $('soc-event-title').textContent=e.attack_type||'Olay';$('soc-event-id').textContent=demo?'DEMO / ÖRNEK BAĞLANTI':`OLAY #${e.id}`;
+    $('soc-event-tags').replaceChildren(chip(LEVEL[e.risk_level],e.risk_level),chip([demo?'Demo':(EVSTATUS[e.status]||e.status||'Bilinmiyor'),'muted']));
+    const fields=[['Kaynak',socName(e.source_ip)],['Hedef',socName(e.target_host)],['Zaman',demo?'Kurgusal örnek':fmtDateTime(e.created_at)],['Risk skoru',Number.isFinite(Number(e.risk_score))?Number(e.risk_score).toFixed(2):'—'],['Incident',e.incident_id?'#'+e.incident_id:'—']];
+    $('soc-event-fields').replaceChildren(...fields.flatMap(([k,v])=>[el('dt',{text:k}),el('dd',{text:v})]));
+    $('soc-event-summary').textContent=demo?'Bu bağlantı, animasyonu göstermek için oluşturulmuş örnektir. Gerçek bir saldırı ya da analist kararı değildir.':(e.summary||'Bu olay için henüz özet bulunmuyor.');
+    const actions=[];
+    if(!demo){
+      const source=el('button',{cls:'btn',text:'Kaynak geçmişi',attrs:{type:'button'}});source.addEventListener('click',()=>{$('soc-event-dialog').close();openSource(e.source_ip);});actions.push(source);
+      if(e.incident_id){const incident=el('button',{cls:'btn',text:'Kanıtlar ve kararlar',attrs:{type:'button'}});incident.addEventListener('click',()=>{$('soc-event-dialog').close();openIncident(e.incident_id);});actions.push(incident);}
+    }
+    $('soc-event-actions').replaceChildren(...actions);
+    const rows=demo?[]:sortedDesc(events).filter(x=>x.source_ip===e.source_ip&&x.target_host===e.target_host).slice(0,6);
+    $('soc-event-related').replaceChildren(...rows.map(x=>{const b=el('button',{cls:'soc-related',attrs:{type:'button'}},el('span',{text:`#${x.id} · ${x.attack_type}`}),el('span',{cls:'muted',text:fmtTime(x.created_at)}));b.addEventListener('click',()=>{socSelectedEvent={...x};socRenderDrawer();});return b;}));
+    if(!rows.length)$('soc-event-related').append(el('p',{cls:'soc-note',text:demo?'Demo kayıtları gerçek geçmişe eklenmez.':'İlişkili kayıt bulunamadı.'}));
+  }
+  function socMapClick(ev){
+    const rect=ev.currentTarget.getBoundingClientRect(),x=(ev.clientX-rect.left)/rect.width*1200,y=(ev.clientY-rect.top)/rect.height*500;
+    const label=(soc.labelHits||[]).find(b=>x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h);
+    const node=label?label.node:soc.nodes.find(n=>Math.abs(n.p[1]-y)<18&&Math.abs(n.p[0]-x)<24);
+    if(node){const route=soc.routes.find(e=>e.from===node.p||e.to===node.p||Math.hypot(e.from[0]-node.p[0],e.from[1]-node.p[1])<1||Math.hypot(e.to[0]-node.p[0],e.to[1]-node.p[1])<1);if(route){socPickEvent(route,ev.currentTarget);return;}}
+    let nearest=null,best=14;
+    soc.routes.forEach((e,i)=>{for(let k=0;k<=80;k++){const p=socCurvePoint(e,i,k/80),distance=Math.hypot(p[0]-x,p[1]-y);if(distance<best){nearest=e;best=distance;}}});
+    if(nearest)socPickEvent(nearest,ev.currentTarget);
+  }
+  function socV2Refresh(){
+    const rows=soc.demo?socDemo:sortedDesc(events);
+    $('soc-recent').replaceChildren(...rows.slice(0,5).map(e=>{const button=el('button',{cls:'soc-open-event',text:soc.demo?e.source_ip:socName(e.source_ip),attrs:{type:'button'},title:'Olay ayrıntısını aç'});button.addEventListener('click',()=>socPickEvent(e,button));return el('div',{cls:'soc-recent-row'},el('span',{text:soc.demo?'DEMO':fmtTime(e.created_at)}),button,el('span',{text:e.attack_type}));}));
+    const box=$('soc-links-list');if(box){box.replaceChildren(...soc.routes.map(e=>{const b=el('button',{cls:'btn',text:`${socName(e.source_ip)} → ${socName(e.target_host)}`,attrs:{type:'button'}});b.addEventListener('click',()=>socPickEvent(e,b));return b;}));if(!soc.routes.length)box.append(el('span',{cls:'soc-note',text:'Bu görünümde bağlantı yok.'}));}
+    if($('soc-event-dialog').open)socRenderDrawer();
+  }
+  function socSaveAssets(next){
+    try{localStorage.setItem(socAssetStorageKey,JSON.stringify(Object.fromEntries(next)));socAssetNames=next;scheduleRender();scheduleIncidents();if(sourceData)renderSource();if(incidentData)renderIncidentDetail();return true;}
+    catch{$('soc-asset-status').textContent='Kaydedilemedi: tarayıcı depolaması kapalı veya dolu.';return false;}
+  }
+  function socRenderAssets(){
+    const addresses=new Set([...socAssetNames.keys()]);for(const e of events.values()){if(e.source_ip)addresses.add(String(e.source_ip));if(e.target_host)addresses.add(String(e.target_host));}
+    $('soc-asset-options').replaceChildren(...[...addresses].slice(0,200).map(a=>el('option',{attrs:{value:a}})));
+    $('soc-alias-list').replaceChildren(...[...socAssetNames].map(([address,name])=>{
+      const edit=el('button',{cls:'btn small',text:'Düzenle',attrs:{type:'button'}});edit.addEventListener('click',()=>{$('soc-asset-address').value=address;$('soc-asset-name').value=name;$('soc-asset-name').focus();});
+      const remove=el('button',{cls:'btn small',text:'Sil',attrs:{type:'button','aria-label':address+' etiketini sil'}});remove.addEventListener('click',()=>{const next=new Map(socAssetNames);next.delete(address);if(socSaveAssets(next)){socRenderAssets();socRefresh();$('soc-asset-status').textContent='Etiket kaldırıldı.';}});
+      return el('div',{cls:'soc-alias-row'},el('span',{cls:'mono',text:address}),el('span',{text:name}),el('div',{cls:'soc-alias-buttons'},edit,remove));
+    }));
+    if(!socAssetNames.size)$('soc-alias-list').append(el('p',{cls:'soc-note',text:'Henüz özel isim tanımlanmadı.'}));
+  }
+  function initSocV2(){
+    try{const saved=JSON.parse(localStorage.getItem(socAssetStorageKey)||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved)){socAssetNames=new Map(Object.entries(saved).filter(([a,n])=>a.length>0&&a.length<=160&&typeof n==='string'&&n.length<=48).slice(0,200));}}catch{}
+    $('soc-event-close').addEventListener('click',()=>$('soc-event-dialog').close());
+    $('soc-event-dialog').addEventListener('close',()=>{if(socDrawerFocus?.isConnected&&['overview','all'].includes(soc.tab))socDrawerFocus.focus({preventScroll:true});});
+    $('soc-assets-close').addEventListener('click',()=>$('soc-assets-dialog').close());
+    $('soc-assets-open').addEventListener('click',()=>{socRenderAssets();$('soc-asset-status').textContent='';$('soc-assets-dialog').showModal();});
+    $('soc-asset-form').addEventListener('submit',ev=>{ev.preventDefault();const address=$('soc-asset-address').value.trim(),name=$('soc-asset-name').value.trim();if(!address||!name){$('soc-asset-status').textContent='Adres ve isim alanlarını doldurun.';return;}if(!socAssetNames.has(address)&&socAssetNames.size>=200){$('soc-asset-status').textContent='En fazla 200 etiket saklanabilir.';return;}const next=new Map(socAssetNames);next.set(address,name);if(socSaveAssets(next)){socRenderAssets();socRefresh();$('soc-asset-status').textContent='İsim bu tarayıcıya kaydedildi.';$('soc-asset-form').reset();}});
+    $('soc-asset-address').addEventListener('change',()=>{const name=socAssetNames.get($('soc-asset-address').value.trim());if(name)$('soc-asset-name').value=name;});
+    $('soc-theme-select').addEventListener('change',()=>socThemeApply($('soc-theme-select').value));
+    const mq=matchMedia('(prefers-color-scheme: light)');if(mq.addEventListener)mq.addEventListener('change',()=>{if($('soc-theme-select').value==='system')socThemeApply('system',false);});
+    let saved='system';try{saved=localStorage.getItem('soc-theme')||'system';}catch{}socThemeApply(saved,false);
+    // Escape closes the active dialog without closing the underlying source/incident.
+    document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&($('soc-event-dialog').open||$('soc-assets-dialog').open))ev.stopImmediatePropagation();},true);
+  }
+
+  initSocV2();
   initSoc();
   start();
 })();
