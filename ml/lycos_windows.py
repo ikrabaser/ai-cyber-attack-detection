@@ -32,7 +32,8 @@ sys.path.insert(0, str(HERE.parent / "sensor"))
 
 from features import FEATURES, WINDOW_SECONDS, extract, window_start  # noqa: E402
 
-COLUMNS = ["day", "src_ip", "window_start", *FEATURES, "label", "label_share", "n_flows"]
+COLUMNS = ["day", "src_ip", "window_start", *FEATURES, "top_port", "top_dst_host", "label", "label_share",
+           "n_flows"]
 
 # Dosyadan yalnızca bunlar okunur (her dosya yüzlerce MB; gereksiz sütun belleği şişirir).
 USE_COLS = ["src_addr", "dst_addr", "dst_port", "ip_prot", "timestamp", "flow_duration",
@@ -96,7 +97,8 @@ def windows_from_flows(flows, day, window=WINDOW_SECONDS):
     for row in extract([flow_to_record(f) for f in flows], window=window):
         label, share, n = labels[(row["src_ip"], row["window_start"])]
         rows.append({"day": day, "src_ip": row["src_ip"], "window_start": row["window_start"],
-                     **{k: row[k] for k in FEATURES}, "label": label, "label_share": round(share, 4),
+                     **{k: row[k] for k in FEATURES}, "top_port": row["top_port"],
+                     "top_dst_host": row["top_dst_host"], "label": label, "label_share": round(share, 4),
                      "n_flows": n})
     return rows
 

@@ -90,6 +90,11 @@ class WindowsFromFlowsTests(unittest.TestCase):
             for k in FEATURES:
                 self.assertEqual(got[k], want[k], k)
 
+    def test_meta_columns_are_kept_for_the_rules(self):
+        r = lw.windows_from_flows(scan_flows(5), "Friday")[0]
+        self.assertEqual(r["top_dst_host"], VICTIM)
+        self.assertIn(r["top_port"], range(1000, 1005))
+
     def test_rows_have_exactly_the_declared_columns(self):
         rows = lw.windows_from_flows(scan_flows(3), "Friday")
         self.assertEqual(list(rows[0]), lw.COLUMNS)

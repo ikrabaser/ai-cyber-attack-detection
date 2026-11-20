@@ -7,7 +7,7 @@ canlıda da geçerli olur.
 | Kademe | Konu | Durum |
 |---|---|---|
 | ML-1 | LycoS-IDS2017 akışlarını (kaynak IP, 10 sn) pencerelerine çevirmek | **tamam** |
-| ML-2 | Zamana göre eğitim/test bölmesi, kural tabanlı kıyas, metrikler | |
+| ML-2 | Zamana göre eğitim/test bölmesi, kural tabanlı kıyas, metrikler | **tamam** |
 | ML-3 | XGBoost | |
 | ML-4 | Lab pencerelerinde dış doğrulama | |
 | ML-5 | Autoencoder | |
@@ -24,7 +24,8 @@ python lycos_windows.py <lycos-ids2017 klasörü> --out data/windows_lycos.csv
 ```
 
 Klasörde `*-WorkingHours.pcap_lycos.csv` dosyaları aranır. Çıktı sütunları:
-`day, src_ip, window_start, <7 özellik>, label, label_share, n_flows`.
+`day, src_ip, window_start, <7 özellik>, top_port, top_dst_host, label, label_share, n_flows`
+(`top_port` ve `top_dst_host` model girdisi değil; kurallar `top_port`a bakar).
 
 - Özellik hesabı burada yeniden yazılmadı: her akış Zeek `conn.log` kaydına benzeyen bir sözlüğe çevrilip
   sensörün `features.extract` fonksiyonundan geçer.
@@ -40,3 +41,17 @@ Testler (pandas gerekir, yoksa ilgili testler atlanır):
 cd ml
 python -m unittest
 ```
+
+## ML-2: bölme, metrikler, kural kıyası
+
+```
+python dataset.py data/windows_lycos.csv      # bölme özeti
+python baseline.py data/windows_lycos.csv     # sensörün kuralları aynı pencerelerde
+```
+
+- `dataset.py`: sınıflar normal / port_scan / brute_force (FTP+SSH-Patator birleşik). Bölme **zamana göre**:
+  her saldırı etiketi kendi zaman çizgisinde (ilk %60 train, 60 sn gap, kalanı test); normal trafik gün gün.
+  DoS, web saldırıları, bot ve karışık pencereler (`label_share < 1`) dışarıda kalır.
+- `metrics.py`: karışıklık matrisi, precision / recall / F1, macro-F1, FPR; elle yazıldı, hepsi matristen türer.
+- `baseline.py`: `sensor/rules.py` aynen çalıştırılır (tüm pencereler zamana göre beslenir, ısrar bonusu
+  için). CIC'te ssh.log olmadığından `ssh_failed_auth = 0` verilir.
