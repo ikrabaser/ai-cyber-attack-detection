@@ -153,6 +153,13 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 .cv { position: relative; height: 220px; }
 .cv-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }
 .cv-empty[hidden] { display: none; }
+.cm th, .cm td { text-align: right; }
+.cm th:first-child, .cm td:first-child { text-align: left; color: var(--muted); }
+.cm td.diag { font-weight: 650; }
+.cm td.off { color: var(--warn); }
+.cm td.zero { color: var(--muted); }
+.ml-notes { margin: 0; padding: 4px 18px 16px 34px; color: var(--muted); line-height: 1.6; }
+.ml-notes li { margin: 4px 0; }
 
 .flow { list-style: none; margin: 0; padding: 4px 0; max-height: 360px; overflow-y: auto; }
 .flow li { display: grid; grid-template-columns: 84px 92px 1fr; gap: 4px 12px; align-items: baseline; padding: 6px 14px; border-bottom: 1px solid var(--line); }
@@ -218,6 +225,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
 <button type="button" role="tab" data-soc-tab="incidents" aria-selected="false">Incident’ler</button>
 <button type="button" role="tab" data-soc-tab="actions" aria-selected="false">Müdahaleler</button>
 <button type="button" role="tab" data-soc-tab="analytics" aria-selected="false">Analizler</button>
+<button type="button" role="tab" data-soc-tab="ml" aria-selected="false">Model değerlendirmesi</button>
 <button type="button" role="tab" data-soc-tab="sources" aria-selected="false">Kaynak ayrıntısı</button>
 <button type="button" role="tab" data-soc-tab="all" aria-selected="false">Tüm kayıtlar</button>
 </nav>
@@ -347,6 +355,48 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
         <figcaption>Eylem durumları</figcaption>
         <div class="cv"><canvas id="ch-actions" role="img" aria-label="Eylemlerin durumlarına göre sayısı"></canvas><p class="cv-empty" id="ch-actions-empty" hidden>Bu aralıkta eylem yok</p></div>
       </figure>
+    </div>
+  </section>
+
+  <section class="card" id="ml-card" aria-labelledby="ml-title">
+    <h2>
+      <span><span id="ml-title">Model değerlendirmesi</span> <small id="ml-sub"></small></span>
+    </h2>
+    <p class="soc-intro" id="ml-note">Bu sekme canlı trafiği değil, <b>çevrimdışı</b> bir değerlendirmeyi gösterir: model ve kurallar, etiketli LycoS-IDS2017 verisinden üretilen (kaynak IP, 10 sn) pencerelerinde, zamana göre ayrılmış test kısmında karşılaştırılır. Canlı kararlar şu an yalnızca kurallardan gelir.</p>
+    <div id="ml-msg" class="empty" role="status" hidden></div>
+    <div id="ml-body" hidden>
+      <div class="kpis" id="ml-kpis"></div>
+      <div class="charts">
+        <figure class="chartbox">
+          <figcaption>Kesinlik (precision): uyarı verdiğinde ne kadar haklı</figcaption>
+          <div class="cv"><canvas id="ch-ml-prec" role="img" aria-label="Sınıf başına kesinlik, XGBoost ve kurallar"></canvas></div>
+        </figure>
+        <figure class="chartbox">
+          <figcaption>Duyarlılık (recall): saldırıların ne kadarını yakaladı</figcaption>
+          <div class="cv"><canvas id="ch-ml-rec" role="img" aria-label="Sınıf başına duyarlılık, XGBoost ve kurallar"></canvas></div>
+        </figure>
+        <figure class="chartbox">
+          <figcaption>XGBoost: özellik önemi (kazanç payı)</figcaption>
+          <div class="cv"><canvas id="ch-ml-imp" role="img" aria-label="XGBoost özellik önemi"></canvas></div>
+        </figure>
+        <figure class="chartbox">
+          <figcaption>PortScan pencereleri: hedef port sayısı dağılımı (eğitim ve test)</figcaption>
+          <div class="cv"><canvas id="ch-ml-ports" role="img" aria-label="PortScan pencerelerinin hedef port sayısına göre dağılımı, eğitim ve test"></canvas></div>
+        </figure>
+      </div>
+      <h3 class="sub">Karışıklık matrisleri (test): satır gerçek sınıf, sütun tahmin</h3>
+      <div class="charts">
+        <figure class="chartbox">
+          <figcaption>XGBoost</figcaption>
+          <div class="table-wrap"><table id="ml-cm-xgb" aria-label="XGBoost karışıklık matrisi"></table></div>
+        </figure>
+        <figure class="chartbox">
+          <figcaption>Kurallar (tetiklenen her alarm)</figcaption>
+          <div class="table-wrap"><table id="ml-cm-rules" aria-label="Kurallar karışıklık matrisi"></table></div>
+        </figure>
+      </div>
+      <h3 class="sub">Okurken dikkat</h3>
+      <ul class="ml-notes" id="ml-notes"></ul>
     </div>
   </section>
 
@@ -1236,10 +1286,166 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     }
     // Açık/koyu tema değişince renkler yeniden okunur.
     const mq = window.matchMedia('(prefers-color-scheme: light)');
-    const retheme = () => { destroyCharts(); renderStats(); renderSource(); };
+    const retheme = () => { destroyCharts(); renderStats(); renderSource(); renderMl(); };
     if (mq.addEventListener) mq.addEventListener('change', retheme);
     setInterval(loadStats, STATS_REFRESH_MS);
     loadStats();
+  }
+
+  // ---- Model değerlendirmesi (çevrimdışı) --------------------------------------
+  // Veri sunucudaki sabit rapordan gelir (ml/export_report.py); canlı değildir. Sekme ilk
+  // açılışta bir kez istenir. Metinler yalnızca textContent ile basılır.
+  const ML_CLASS = { normal: 'Normal', port_scan: 'Port tarama', brute_force: 'Kaba kuvvet' };
+  const ML_FEATURE = {
+    n_conns: 'Bağlantı sayısı', n_dst_ports: 'Hedef port sayısı', n_dst_hosts: 'Hedef makine sayısı',
+    fail_ratio: 'Başarısız oranı', mean_duration: 'Ort. süre', mean_bytes: 'Ort. bayt', top_port_share: 'En sık port payı',
+  };
+  const ML_NOTES = [
+    'Test kümesinin neredeyse tamamı normal pencere; bu yüzden doğruluk (accuracy) yanıltıcıdır, sınıf başına kesinlik/duyarlılık ve makro-F1 esas alınır.',
+    'Port tarama testi yalnızca birkaç düzine pencere içerir ve testteki taramalar eğitimdekilerden daha geniştir (sağdaki dağılım grafiği); bu sınıfın skorları kesin bir sonuç değil, işarettir.',
+    'XGBoost’un “yanlış alarm” saydığı pencerelerin bir kısmı, saldırgan IP’sinin etiketsiz kalan pencereleri olabilir (etiket gürültüsü). Kurallar aynı veride çalıştırılır ve alarm verdikleri her pencere sayılır.',
+    'Bu değerlendirme laboratuvar trafiğiyle henüz doğrulanmadı; panelin canlı kararlarını etkilemez.',
+  ];
+  let mlData = null;
+  let mlLoaded = false;
+  let mlBusy = false;
+
+  const pct = (v) => (v * 100).toFixed(1).replace('.', ',') + '%';
+  const pct2 = (v) => (v * 100).toFixed(2).replace('.', ',') + '%';
+  const f3 = (v) => v.toFixed(3).replace('.', ',');
+
+  function mlKpi(value, label) {
+    const d = el('div', { cls: 'kpi' });
+    d.appendChild(el('div', { cls: 'n', text: value }));
+    d.appendChild(el('div', { cls: 'l', text: label }));
+    return d;
+  }
+
+  function renderMatrix(id, m, classes) {
+    const t = $(id);
+    t.replaceChildren();
+    const head = el('tr');
+    head.appendChild(el('th', { text: 'gerçek \\ tahmin' }));
+    for (const c of classes) head.appendChild(el('th', { text: ML_CLASS[c] || c }));
+    t.appendChild(el('thead', null, head));
+    const body = el('tbody');
+    for (const row of classes) {
+      const tr = el('tr');
+      tr.appendChild(el('td', { text: ML_CLASS[row] || row }));
+      for (const col of classes) {
+        const n = m[row][col];
+        const cls = n === 0 ? 'zero' : (row === col ? 'diag' : 'off');
+        tr.appendChild(el('td', { cls, text: n.toLocaleString('tr-TR') }));
+      }
+      body.appendChild(tr);
+    }
+    t.appendChild(body);
+  }
+
+  function renderMl() {
+    const d = mlData;
+    if (!d || typeof Chart === 'undefined') return;
+    const c = palette();
+    const base = { responsive: true, maintainAspectRatio: false, animation: false };
+    const classes = d.classes;
+    const labels = classes.map((k) => ML_CLASS[k] || k);
+    const axisY = (max) => ({ min: 0, max, ticks: { color: c.text }, grid: { color: c.grid }, border: { color: c.grid } });
+    const nameAxis = { ticks: { color: c.text }, grid: { display: false }, border: { color: c.grid } };
+    const legend = { labels: { color: c.text, boxWidth: 12 } };
+    const pair = (id, key) => {
+      if (charts[id]) return;
+      charts[id] = new Chart($(id), {
+        type: 'bar',
+        data: { labels, datasets: [
+          { label: 'XGBoost', data: classes.map((k) => d.xgb.per_class[k][key]), backgroundColor: c.info, maxBarThickness: 34 },
+          { label: 'Kurallar', data: classes.map((k) => d.rules.per_class[k][key]), backgroundColor: c.text, maxBarThickness: 34 },
+        ] },
+        options: Object.assign({}, base, {
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${f3(ctx.parsed.y)}` } } },
+          scales: { x: nameAxis, y: axisY(1) },
+        }),
+      });
+    };
+    pair('ch-ml-prec', 'precision');
+    pair('ch-ml-rec', 'recall');
+
+    if (!charts.mlImp) {
+      charts.mlImp = new Chart($('ch-ml-imp'), {
+        type: 'bar',
+        data: { labels: d.importance.map((r) => ML_FEATURE[r[0]] || r[0]),
+          datasets: [{ data: d.importance.map((r) => r[1]), backgroundColor: c.info, maxBarThickness: 22 }] },
+        options: Object.assign({}, base, {
+          indexAxis: 'y',
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => pct(ctx.parsed.x) } } },
+          scales: { x: { beginAtZero: true, ticks: { color: c.text, callback: (v) => Math.round(v * 100) + '%' }, grid: { color: c.grid }, border: { color: c.grid } }, y: nameAxis },
+        }),
+      });
+    }
+
+    if (!charts.mlPorts) {
+      const pp = d.port_scan_ports;
+      const share = (arr) => { const t = arr.reduce((a, b) => a + b, 0) || 1; return arr.map((v) => v / t); };
+      const nTrain = pp.train.reduce((a, b) => a + b, 0);
+      const nTest = pp.test.reduce((a, b) => a + b, 0);
+      charts.mlPorts = new Chart($('ch-ml-ports'), {
+        type: 'bar',
+        data: { labels: pp.bins, datasets: [
+          { label: `Eğitim (${nTrain} pencere)`, data: share(pp.train), backgroundColor: c.info, maxBarThickness: 26 },
+          { label: `Test (${nTest} pencere)`, data: share(pp.test), backgroundColor: c.text, maxBarThickness: 26 },
+        ] },
+        options: Object.assign({}, base, {
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${pct(ctx.parsed.y)}` } } },
+          scales: { x: Object.assign({ title: { display: true, text: 'penceredeki hedef port sayısı', color: c.text } }, nameAxis),
+                    y: { min: 0, ticks: { color: c.text, callback: (v) => Math.round(v * 100) + '%' }, grid: { color: c.grid }, border: { color: c.grid } } },
+        }),
+      });
+    }
+  }
+
+  function renderMlStatic() {
+    const d = mlData;
+    const x = d.xgb;
+    const r = d.rules;
+    const testN = classesTotal(d.split.counts.test);
+    const kp = $('ml-kpis');
+    kp.replaceChildren(
+      mlKpi(f3(x.macro_f1), 'XGBoost makro-F1'),
+      mlKpi(f3(r.macro_f1), 'Kurallar makro-F1'),
+      mlKpi(pct2(x.fpr), 'XGBoost yanlış alarm oranı'),
+      mlKpi(pct2(r.fpr), 'Kurallar yanlış alarm oranı'),
+      mlKpi(testN.toLocaleString('tr-TR'), 'Test penceresi'),
+    );
+    renderMatrix('ml-cm-xgb', x.matrix, d.classes);
+    renderMatrix('ml-cm-rules', r.matrix, d.classes);
+    for (const id of ['ml-cm-xgb', 'ml-cm-rules']) $(id).classList.add('cm');
+    const nl = $('ml-notes');
+    nl.replaceChildren(...ML_NOTES.map((t) => el('li', { text: t })));
+    $('ml-sub').textContent = `${d.dataset} · ${d.window} · rapor tarihi ${d.generated}`;
+  }
+
+  function classesTotal(counts) { return Object.values(counts).reduce((a, b) => a + b, 0); }
+
+  async function loadMl() {
+    if (mlLoaded || mlBusy) { if (mlLoaded) renderMl(); return; }
+    mlBusy = true;
+    try {
+      const r = await fetch(cfg.mlUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (r.status === 403) return;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      mlData = await r.json();
+      renderMlStatic();
+      $('ml-msg').hidden = true;
+      $('ml-body').hidden = false;
+      mlLoaded = true;
+      requestAnimationFrame(renderMl);
+    } catch (err) {
+      $('ml-msg').textContent = 'Model raporu alınamadı: ' + err.message;
+      $('ml-msg').hidden = false;
+    } finally {
+      mlBusy = false;
+    }
   }
 
   // ---- Incident'ler --------------------------------------------------------
@@ -1577,7 +1783,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
 
   // SOC v1: Uses the existing authenticated state and RPC handlers. No extra sockets.
   const soc = {tab:'overview', mode:'local', demo:false, paused:false, routes:[], nodes:[], frame:0, last:0, clock:0, snapshot:null};
-  const socTitles = {overview:['Ağınızdaki hareketi izleyin.','Gerçek olay kayıtları · Kaynaktan hedefe görünürlük'],events:['Olay kayıtları','Kaynak, hedef, risk ve durum bazında inceleme'],incidents:['Incident incelemeleri','Kanıtlar, ajan çalışmaları ve analist kararları'],actions:['Müdahale merkezi','Onay, ret, engelleme süresi ve geri alma'],analytics:['Trafik ve risk analizi','Seçilen zaman aralığındaki sunucu istatistikleri'],sources:['Kaynak incelemesi','Bir kaynak IP seçerek zaman çizelgesini açın.'],all:['Tüm operasyon kayıtları','Mevcut paneldeki bütün bölümler']};
+  const socTitles = {overview:['Ağınızdaki hareketi izleyin.','Gerçek olay kayıtları · Kaynaktan hedefe görünürlük'],events:['Olay kayıtları','Kaynak, hedef, risk ve durum bazında inceleme'],incidents:['Incident incelemeleri','Kanıtlar, ajan çalışmaları ve analist kararları'],actions:['Müdahale merkezi','Onay, ret, engelleme süresi ve geri alma'],analytics:['Trafik ve risk analizi','Seçilen zaman aralığındaki sunucu istatistikleri'],ml:['Model değerlendirmesi','Çevrimdışı test: XGBoost ve kural tabanlı tespit karşılaştırması'],sources:['Kaynak incelemesi','Bir kaynak IP seçerek zaman çizelgesini açın.'],all:['Tüm operasyon kayıtları','Mevcut paneldeki bütün bölümler']};
   const socGroups = new Map();
   const socDemo = [
     {id:-1,source_ip:'203.0.113.7',target_host:'DEMO İstanbul',attack_type:'brute_force',risk_level:'high',a:[-77,39],b:[29,41]},
@@ -1590,6 +1796,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     for (const [node, group] of socGroups) node.classList.toggle('soc-off', tab !== 'all' && group !== tab);
     for (const b of document.querySelectorAll('[data-soc-tab]')) b.setAttribute('aria-selected',String(b.dataset.socTab===tab));
     $('soc-title').textContent=socTitles[tab][0]; $('soc-subtitle').textContent=socTitles[tab][1];
+    if (tab === 'ml' || tab === 'all') loadMl();
     requestAnimationFrame(()=>{for(const c of Object.values(charts)) if(c.resize)c.resize(); socDraw();});
   }
   function socRefresh() {
@@ -1696,7 +1903,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
   function initSoc(){
     const wrap=document.querySelector('.wrap');
     const group=(node,name)=>{if(node)socGroups.set(node,name);};
-    group($('pending').closest('section'),'actions');group($('actions-body').closest('section'),'actions');group($('events-body').closest('section'),'events');group($('inc-card'),'incidents');group($('incd-card'),'incidents');group($('source-card'),'sources');group($('ch-timeline').closest('section'),'analytics');group($('flow-card'),'overview');group($('soc-map-wrap'),'overview');
+    group($('pending').closest('section'),'actions');group($('actions-body').closest('section'),'actions');group($('events-body').closest('section'),'events');group($('inc-card'),'incidents');group($('incd-card'),'incidents');group($('source-card'),'sources');group($('ch-timeline').closest('section'),'analytics');group($('ml-card'),'ml');group($('flow-card'),'overview');group($('soc-map-wrap'),'overview');
     const intro=el('div',{cls:'soc-intro',text:'Kaynak ayrıntısı için Canlı görünüm, Olaylar veya Incident’ler bölümündeki IP adresine tıklayın.'});$('source-card').before(intro);group(intro,'sources');
     const scope=el('p',{cls:'soc-scope',attrs:{id:'soc-scope'}});document.querySelector('.kpis').after(scope);
     const foot=el('footer',{cls:'soc-footer'},el('span',{text:'Saldırı Tespit Paneli · Yetkili operasyon oturumu'}),el('span',{attrs:{id:'soc-sync'},text:'Son başarılı veri alımı: bekleniyor'}));wrap.append(foot);

@@ -10,6 +10,7 @@ olabilir. Şablon bunları yalnızca `textContent` ile basar; ayrıca sıkı bir
 (nonce'lu script/style, dış bağlantı yalnızca Centrifugo) gönderilir.
 """
 
+import json
 import secrets
 from functools import lru_cache, wraps
 from pathlib import Path
@@ -145,6 +146,7 @@ def panel(request):
             "eventsUrl": "/panel/api/events/",
             "sourceUrl": "/panel/api/source/",
             "incidentUrl": "/panel/api/incident/",
+            "mlUrl": "/panel/api/ml/",
             "channels": [
                 realtime.CHANNEL_FEED,
                 realtime.CHANNEL_ACTIONS,
@@ -186,6 +188,30 @@ def stats_view(request):
     if range_key not in stats.RANGES:
         return JsonResponse({"error": "geçersiz aralık"}, status=400)
     response = JsonResponse(stats.build_stats(range_key))
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+ML_REPORT_PATH = Path(__file__).resolve().parent / "ml_report.json"
+
+
+@lru_cache(maxsize=1)
+def _ml_report():
+    """ml/export_report.py'nin yazdığı çevrimdışı değerlendirme; dosya sabit olduğundan bir kez okunur."""
+    try:
+        return json.loads(ML_REPORT_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+@require_GET
+@_staff_json
+def ml_report_view(request):
+    """Model değerlendirmesi sekmesi için hazır sayılar (canlı veri değil, veri kümesi sonucu)."""
+    report = _ml_report()
+    if report is None:
+        return JsonResponse({"error": "model raporu yok"}, status=404)
+    response = JsonResponse(report)
     response["Cache-Control"] = "no-store"
     return response
 

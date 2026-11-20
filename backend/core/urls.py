@@ -7,6 +7,7 @@ urlpatterns = [
     path("panel/", views_panel.panel),
     path("panel/api/snapshot/", views_panel.snapshot),
     path("panel/api/stats/", views_panel.stats_view),
+    path("panel/api/ml/", views_panel.ml_report_view),
     path("panel/api/events/", views_panel.events_view),
     path("panel/api/source/", views_panel.source_view),
     path("panel/api/incident/", views_panel.incident_view),

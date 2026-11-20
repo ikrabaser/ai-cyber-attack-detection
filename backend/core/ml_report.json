@@ -1,0 +1,187 @@
+{
+ "classes": [
+  "normal",
+  "port_scan",
+  "brute_force"
+ ],
+ "dataset": "LycoS-IDS2017 (CIC-IDS2017)",
+ "generated": "2026-11-20",
+ "importance": [
+  [
+   "n_dst_ports",
+   0.3295598328113556
+  ],
+  [
+   "n_dst_hosts",
+   0.2448834776878357
+  ],
+  [
+   "fail_ratio",
+   0.12239465862512589
+  ],
+  [
+   "top_port_share",
+   0.11411745101213455
+  ],
+  [
+   "n_conns",
+   0.08079780638217926
+  ],
+  [
+   "mean_duration",
+   0.07550866901874542
+  ],
+  [
+   "mean_bytes",
+   0.03273814916610718
+  ]
+ ],
+ "port_scan_ports": {
+  "bins": [
+   "1-2",
+   "3-5",
+   "6-9",
+   "10-49",
+   "50-499",
+   "500+"
+  ],
+  "test": [
+   1,
+   3,
+   2,
+   0,
+   0,
+   24
+  ],
+  "train": [
+   7,
+   36,
+   0,
+   0,
+   0,
+   11
+  ]
+ },
+ "rules": {
+  "accuracy": 0.9982432432432432,
+  "fpr": 0.00023899757588173034,
+  "macro_f1": 0.907592330781164,
+  "matrix": {
+   "brute_force": {
+    "brute_force": 242,
+    "normal": 39,
+    "port_scan": 0
+   },
+   "normal": {
+    "brute_force": 1,
+    "normal": 29282,
+    "port_scan": 6
+   },
+   "port_scan": {
+    "brute_force": 0,
+    "normal": 6,
+    "port_scan": 24
+   }
+  },
+  "per_class": {
+   "brute_force": {
+    "f1": 0.9236641221374047,
+    "precision": 0.9958847736625515,
+    "recall": 0.8612099644128114,
+    "support": 281
+   },
+   "normal": {
+    "f1": 0.9991128702060871,
+    "precision": 0.9984655777952057,
+    "recall": 0.9997610024241183,
+    "support": 29289
+   },
+   "port_scan": {
+    "f1": 0.8000000000000002,
+    "precision": 0.8,
+    "recall": 0.8,
+    "support": 30
+   }
+  }
+ },
+ "split": {
+  "counts": {
+   "gap": {
+    "brute_force": 12,
+    "normal": 173,
+    "port_scan": 6
+   },
+   "test": {
+    "brute_force": 281,
+    "normal": 29289,
+    "port_scan": 30
+   },
+   "train": {
+    "brute_force": 439,
+    "normal": 44160,
+    "port_scan": 54
+   }
+  },
+  "gap_seconds": 60,
+  "train_fraction": 0.6
+ },
+ "window": "(kaynak IP, 10 sn)",
+ "xgb": {
+  "accuracy": 0.9985472972972973,
+  "fpr": 0.0011949878794086518,
+  "macro_f1": 0.8956071582441343,
+  "matrix": {
+   "brute_force": {
+    "brute_force": 273,
+    "normal": 8,
+    "port_scan": 0
+   },
+   "normal": {
+    "brute_force": 12,
+    "normal": 29254,
+    "port_scan": 23
+   },
+   "port_scan": {
+    "brute_force": 0,
+    "normal": 0,
+    "port_scan": 30
+   }
+  },
+  "per_class": {
+   "brute_force": {
+    "f1": 0.9646643109540636,
+    "precision": 0.9578947368421052,
+    "recall": 0.9715302491103203,
+    "support": 281
+   },
+   "normal": {
+    "f1": 0.9992655975132791,
+    "precision": 0.9997266078873625,
+    "recall": 0.9988050121205914,
+    "support": 29289
+   },
+   "port_scan": {
+    "f1": 0.7228915662650602,
+    "precision": 0.5660377358490566,
+    "recall": 1.0,
+    "support": 30
+   }
+  },
+  "pr_auc": {
+   "brute_force": 0.9747719349206866,
+   "normal": 0.9999658508286646,
+   "port_scan": 0.8050597245278096
+  }
+ },
+ "xgb_params": {
+  "colsample_bytree": 0.8,
+  "eval_metric": "mlogloss",
+  "learning_rate": 0.1,
+  "max_depth": 4,
+  "n_estimators": 200,
+  "n_jobs": 1,
+  "random_state": 0,
+  "subsample": 0.8,
+  "tree_method": "hist"
+ }
+}

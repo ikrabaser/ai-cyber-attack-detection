@@ -66,3 +66,14 @@ python train_xgb.py data/windows_lycos.csv --save data/xgb.json
 Aynı bölme, aynı metrikler, kurallarla yan yana. Girdi yalnızca sensörün 7 özelliği (IP ve port model girdisi
 değil). Sınıf dengesizliği için örnek ağırlığı (`balanced_weights`); hiperparametreler sabit ve ayarlanmadı,
 çünkü test setine bakarak ayar yapmak testi "görülmemiş" olmaktan çıkarır.
+
+## Panelde görmek: Model değerlendirmesi sekmesi
+
+```
+python export_report.py data/windows_lycos.csv --out ../backend/core/ml_report.json
+```
+
+Betik aynı bölmeyi, aynı modeli ve kuralları çalıştırıp sonuçları küçük bir JSON'a yazar
+(`backend/core/ml_report.json`). Panelin "Model değerlendirmesi" sekmesi bu dosyayı yalnızca staff'a
+`/panel/api/ml/` ile sunar. Sekme **çevrimdışı** sonucu gösterir; canlı kararlar hâlâ kurallardan gelir.
+Veri veya model değişirse dosya yeniden üretilir.
