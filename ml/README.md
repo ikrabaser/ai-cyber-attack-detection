@@ -8,7 +8,7 @@ canlıda da geçerli olur.
 |---|---|---|
 | ML-1 | LycoS-IDS2017 akışlarını (kaynak IP, 10 sn) pencerelerine çevirmek | **tamam** |
 | ML-2 | Zamana göre eğitim/test bölmesi, kural tabanlı kıyas, metrikler | **tamam** |
-| ML-3 | XGBoost | |
+| ML-3 | XGBoost | **tamam** |
 | ML-4 | Lab pencerelerinde dış doğrulama | |
 | ML-5 | Autoencoder | |
 | ML-6 | LSTM | |
@@ -55,3 +55,14 @@ python baseline.py data/windows_lycos.csv     # sensörün kuralları aynı penc
 - `metrics.py`: karışıklık matrisi, precision / recall / F1, macro-F1, FPR; elle yazıldı, hepsi matristen türer.
 - `baseline.py`: `sensor/rules.py` aynen çalıştırılır (tüm pencereler zamana göre beslenir, ısrar bonusu
   için). CIC'te ssh.log olmadığından `ssh_failed_auth = 0` verilir.
+
+## ML-3: XGBoost
+
+```
+pip install -r requirements.txt
+python train_xgb.py data/windows_lycos.csv --save data/xgb.json
+```
+
+Aynı bölme, aynı metrikler, kurallarla yan yana. Girdi yalnızca sensörün 7 özelliği (IP ve port model girdisi
+değil). Sınıf dengesizliği için örnek ağırlığı (`balanced_weights`); hiperparametreler sabit ve ayarlanmadı,
+çünkü test setine bakarak ayar yapmak testi "görülmemiş" olmaktan çıkarır.
