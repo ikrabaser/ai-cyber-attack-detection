@@ -9,7 +9,7 @@ canlıda da geçerli olur.
 | ML-1 | LycoS-IDS2017 akışlarını (kaynak IP, 10 sn) pencerelerine çevirmek | **tamam** |
 | ML-2 | Zamana göre eğitim/test bölmesi, kural tabanlı kıyas, metrikler | **tamam** |
 | ML-3 | XGBoost | **tamam** |
-| ML-4 | Lab pencerelerinde dış doğrulama | **betik hazır**, lab koşusu bekleniyor |
+| ML-4 | Lab pencerelerinde dış doğrulama | **tamam** |
 | ML-5 | Autoencoder | |
 | ML-6 | LSTM | |
 | ML-7 | Sensöre bağlamak | |
@@ -87,3 +87,20 @@ python lab_eval.py ../lab/data/conn.log ../lab/data/runs.jsonl --train data/wind
 CIC'te eğitilen model (ML-3 ile aynı sabit parametreler) ve kurallar, kendi lab'ımızda gerçek nmap/Hydra ile
 üretilen, hiç görülmemiş trafiğe verilir. Etiketin kaynağı koşu günlüğüdür. Kurallar hem ssh.log ile hem
 onsuz ölçülür; model ile adil kıyas "ssh.log yok" olandır. Lab örneği küçüktür, sonuç işaret olarak okunmalıdır.
+
+### Lab sonucu (2026-11-21, tek temiz koşu)
+
+Koşular: 2 normal (2 dk), 1 nmap taraması (1-100 port, `-T2`), 1 Hydra SSH (4 iş parçacığı); koşular
+birbirine karışmadan arka arkaya, 33 tam pencere ölçüldü (yarım pencereler ve koşu dışı 2 pencere hariç).
+
+| | normal (22) | port tarama (7) | kaba kuvvet (4) |
+|---|---|---|---|
+| XGBoost | 22/22 | 7/7 | 0/4 |
+| Kurallar (ssh.log ile) | 22/22 | 7/7 | 4/4 |
+| Kurallar (ssh.log olmadan) | 22/22 | 7/7 | 0/4 |
+
+Yanlış alarm yok. Port tarama CIC'ten kendi lab'ımıza aktarıldı. Kaba kuvvet aktarılmadı ve nedeni veride
+görülüyor: Hydra bir SSH bağlantısında birkaç parola dener, `conn.log`'ta pencere başına 1-4 uzun bağlantı
+kalır (normal bir SSH oturumundan ayırt edilemez). Asıl kanıt `ssh.log`'taki başarısız deneme sayısıdır;
+modelin girdisinde bu yoktur ve CIC'te ssh.log da yoktur. Örnek çok küçüktür (4 kaba kuvvet penceresi),
+sonuç bir işarettir. Ham lab dosyaları `.gitignore`'dadır; çalıştırmak için `lab/README.md`.

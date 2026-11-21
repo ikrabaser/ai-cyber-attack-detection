@@ -1304,7 +1304,8 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     'Test kümesinin neredeyse tamamı normal pencere; bu yüzden doğruluk (accuracy) yanıltıcıdır, sınıf başına kesinlik/duyarlılık ve makro-F1 esas alınır.',
     'Port tarama testi yalnızca birkaç düzine pencere içerir ve testteki taramalar eğitimdekilerden daha geniştir (sağdaki dağılım grafiği); bu sınıfın skorları kesin bir sonuç değil, işarettir.',
     'XGBoost’un “yanlış alarm” saydığı pencerelerin bir kısmı, saldırgan IP’sinin etiketsiz kalan pencereleri olabilir (etiket gürültüsü). Kurallar aynı veride çalıştırılır ve alarm verdikleri her pencere sayılır.',
-    'Bu değerlendirme laboratuvar trafiğiyle henüz doğrulanmadı; panelin canlı kararlarını etkilemez.',
+    'Kendi lab’ımızda (nmap, Hydra) ayrıca denendi: port tarama modelde de kurallarda da yakalandı; Hydra SSH kaba kuvvetini yalnızca ssh.log kullanan kurallar yakaladı, model conn.log özelliklerinden göremedi. Lab örneği çok küçük (7 tarama, 4 Hydra penceresi), sonuç bir işarettir.',
+    'Bu sekme panelin canlı kararlarını etkilemez.',
   ];
   let mlData = null;
   let mlLoaded = false;
