@@ -10,7 +10,7 @@ canlıda da geçerli olur.
 | ML-2 | Zamana göre eğitim/test bölmesi, kural tabanlı kıyas, metrikler | **tamam** |
 | ML-3 | XGBoost | **tamam** |
 | ML-4 | Lab pencerelerinde dış doğrulama | **tamam** |
-| ML-5 | Autoencoder | |
+| ML-5 | Autoencoder (bilinmeyen saldırı) | **tamam** |
 | ML-6 | LSTM | |
 | ML-7 | Sensöre bağlamak | |
 
@@ -104,3 +104,40 @@ görülüyor: Hydra bir SSH bağlantısında birkaç parola dener, `conn.log`'ta
 kalır (normal bir SSH oturumundan ayırt edilemez). Asıl kanıt `ssh.log`'taki başarısız deneme sayısıdır;
 modelin girdisinde bu yoktur ve CIC'te ssh.log da yoktur. Örnek çok küçüktür (4 kaba kuvvet penceresi),
 sonuç bir işarettir. Ham lab dosyaları `.gitignore`'dadır; çalıştırmak için `lab/README.md`.
+
+## ML-5: Autoencoder
+
+```
+python autoencoder.py data/windows_lycos.csv
+```
+
+Yalnızca normal pencerelerle eğitilen küçük bir sinir ağı (7 → 5 → 3 → 5 → 7, scikit-learn `MLPRegressor`).
+Girdiyi tekrar kurmaya çalışır; normali iyi kurar, öğrenmediği trafiği kuramaz ve hatası büyür. Hata
+eşiğin üstündeyse alarm. Eşik, eğitim normallerinin zamanca son %20'sindeki hatanın yüzdeliğidir (%99 ve %99,9),
+test setine bakılarak seçilmez. Sinir ağı başlangıca duyarlı olduğundan 5 tohumla çalışır; AUC için ortalama ve
+en kötü/en iyi değer verilir. Mimari sonuçlara bakılmadan sabitlendi; iki ek mimari yalnızca duyarlılık
+denemesi olarak bakıldı ve sonuçlar mimariye duyarlıdır (özellikle DoS türlerinde), bu yüzden tek sayıya
+güvenilmez.
+
+Karşılaştırma, aynı pencerelerde (test normal 29 289, yanlış alarm oranı: kurallar %0,02, XGBoost %0,12,
+autoencoder p99 %0,98, p99,9 %0,11). Alarm verilen pencere oranı:
+
+| tür | n | kurallar | XGBoost | yalnızca n_conns eşiği (p99) | AE p99 | AE p99,9 |
+|---|---|---|---|---|---|---|
+| ddos | 119 | 0,00 | 0,00 | 0,98 | 1,00 | 0,66 |
+| dos_hulk | 84 | 0,00 | 0,00 | 0,86 | 0,90 | 0,81 |
+| dos_goldeneye | 35 | 0,00 | 0,00 | 0,06 | 0,87 | 0,10 |
+| dos_slowloris | 136 | 0,00 | 0,01 | 0,00 | 0,69 | 0,38 |
+| portscan (test) | 30 | 0,80 | 1,00 | 0,80 | 0,83 | 0,80 |
+| ssh_patator (test) | 140 | 0,74 | 0,96 | 0,00 | 0,00 | 0,00 |
+| ftp_patator (test) | 141 | 0,99 | 0,99 | 0,00 | 0,00 | 0,00 |
+| web saldırıları, bot, slowhttptest | 12-330 | ~0 | ~0 | ~0 | ~0 | ~0 |
+
+Okuma: kurallar ve XGBoost tarama ve kaba kuvvette güçlü, DoS ailesini hiç yakalamıyor; autoencoder DoS
+ailesini yakalıyor, ama kaba kuvveti göremiyor (bağlantı düzeyinde normal görünür). Yani üç yöntem birbirini
+tamamlıyor. Dürüst notlar: (1) en basit rakip olan "bağlantı sayısı eşiği" DDoS ve Hulk'ta autoencoder kadar
+iyidir; autoencoder'ın asıl katkısı çok özelliği birlikte görmesiyle GoldenEye ve Slowloris'te ortaya çıkar.
+(2) %1 yanlış alarm bütçesi canlıda çok alarm demektir; %0,1'e inince DoS yakalama oranı düşer. (3) Web
+saldırıları, bot ve slowhttptest bu 7 bağlantı özelliğiyle normalden ayrılamıyor (bot pencereleri normalden bile
+"daha normal"); yük (HTTP içeriği) görünmeden bu mümkün değil. (4) Heartbleed ve SQL injection 12 pencere,
+sonuçları işaret.
