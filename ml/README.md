@@ -9,7 +9,7 @@ canlıda da geçerli olur.
 | ML-1 | LycoS-IDS2017 akışlarını (kaynak IP, 10 sn) pencerelerine çevirmek | **tamam** |
 | ML-2 | Zamana göre eğitim/test bölmesi, kural tabanlı kıyas, metrikler | **tamam** |
 | ML-3 | XGBoost | **tamam** |
-| ML-4 | Lab pencerelerinde dış doğrulama | |
+| ML-4 | Lab pencerelerinde dış doğrulama | **betik hazır**, lab koşusu bekleniyor |
 | ML-5 | Autoencoder | |
 | ML-6 | LSTM | |
 | ML-7 | Sensöre bağlamak | |
@@ -77,3 +77,13 @@ Betik aynı bölmeyi, aynı modeli ve kuralları çalıştırıp sonuçları kü
 (`backend/core/ml_report.json`). Panelin "Model değerlendirmesi" sekmesi bu dosyayı yalnızca staff'a
 `/panel/api/ml/` ile sunar. Sekme **çevrimdışı** sonucu gösterir; canlı kararlar hâlâ kurallardan gelir.
 Veri veya model değişirse dosya yeniden üretilir.
+
+## ML-4: Lab doğrulaması
+
+```
+python lab_eval.py ../lab/data/conn.log ../lab/data/runs.jsonl --train data/windows_lycos.csv
+```
+
+CIC'te eğitilen model (ML-3 ile aynı sabit parametreler) ve kurallar, kendi lab'ımızda gerçek nmap/Hydra ile
+üretilen, hiç görülmemiş trafiğe verilir. Etiketin kaynağı koşu günlüğüdür. Kurallar hem ssh.log ile hem
+onsuz ölçülür; model ile adil kıyas "ssh.log yok" olandır. Lab örneği küçüktür, sonuç işaret olarak okunmalıdır.
