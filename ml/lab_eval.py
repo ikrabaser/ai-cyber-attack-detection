@@ -20,6 +20,7 @@ Uyarı: lab örneği küçüktür (birkaç koşu). Sonuç bir işarettir, kesin 
 import argparse
 import json
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -123,6 +124,36 @@ def format_lab(rows, results, runs_table, outside):
     return "\n".join(lines)
 
 
+def run_lab(conn_log, runs_path, train_rows, ssh_log=None):
+    """Lab günlüklerini etiketler, model ve kuralları çalıştırır. Dönen sözlük yazdırmaya ve panele yeter."""
+    from train_xgb import train  # xgboost gerekir
+
+    ssh_path = Path(ssh_log) if ssh_log else Path(conn_log).with_name("ssh.log")
+    ssh_records = list(read_log(ssh_path)) if ssh_path.exists() else []
+    runs = read_runs(runs_path)
+    rows = label_rows(extract(read_log(conn_log), ssh_records=ssh_records), runs)
+    model = train(train_rows)
+    calls = {"xgb": model_calls(model, rows), "rules_ssh": rule_calls(rows, True), "rules_nossh": rule_calls(rows, False)}
+    if not ssh_records:
+        calls.pop("rules_ssh")  # ssh.log yoksa iki kural varyantı aynıdır
+    return {"rows": rows, "runs": runs, "ssh_records": len(ssh_records), "results": evaluate_lab(rows, calls),
+            "per_run": per_run(rows, calls), "outside": outside_runs(rows, calls)}
+
+
+def panel_summary(lab):
+    """Panelin gösterdiği küçük özet: yöntem başına, sınıf başına (doğru, ölçülen) pencere sayısı."""
+    methods = []
+    for key, res in lab["results"].items():
+        methods.append({"name": NAMES[key], "hits": {c: [res["matrix"][c][c], res["per_class"][c]["support"]]
+                                                      for c in CLASSES}})
+    support = {c: next(iter(lab["results"].values()))["per_class"][c]["support"] for c in CLASSES}
+    start = min(r["start"] for r in lab["runs"])
+    return {"date": time.strftime("%Y-%m-%d", time.localtime(start)),
+            "runs": len(lab["runs"]), "windows": sum(support.values()), "support": support,
+            "unmeasured_boundary": sum(1 for r in lab["rows"] if r["cls"] and r["boundary"]),
+            "ssh_log": lab["ssh_records"] > 0, "methods": methods}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("conn_log")
@@ -132,23 +163,14 @@ def main(argv=None):
     ap.add_argument("--json", help="sonucu bu JSON dosyasına yaz")
     args = ap.parse_args(argv)
 
-    from train_xgb import train  # xgboost gerekir
-
-    ssh_path = Path(args.ssh_log) if args.ssh_log else Path(args.conn_log).with_name("ssh.log")
-    ssh_records = list(read_log(ssh_path)) if ssh_path.exists() else []
-    rows = label_rows(extract(read_log(args.conn_log), ssh_records=ssh_records), read_runs(args.runs))
-
-    model = train([r for r in assign_split(load_windows(args.train)) if r["split"] == "train"])
-    calls = {"xgb": model_calls(model, rows), "rules_ssh": rule_calls(rows, True), "rules_nossh": rule_calls(rows, False)}
-    if not ssh_records:
-        calls.pop("rules_ssh")  # ssh.log yoksa iki kural varyantı aynıdır
-    results = evaluate_lab(rows, calls)
-    table, outside = per_run(rows, calls), outside_runs(rows, calls)
-    print(f"ssh.log: {'var, ' + str(len(ssh_records)) + ' kayıt' if ssh_records else 'yok'}\n")
-    print(format_lab(rows, results, table, outside))
+    train_rows = [r for r in assign_split(load_windows(args.train)) if r["split"] == "train"]
+    lab = run_lab(args.conn_log, args.runs, train_rows, args.ssh_log)
+    print(f"ssh.log: {'var, ' + str(lab['ssh_records']) + ' kayıt' if lab['ssh_records'] else 'yok'}\n")
+    print(format_lab(lab["rows"], lab["results"], lab["per_run"], lab["outside"]))
     if args.json:
-        Path(args.json).write_text(json.dumps({"results": results, "runs": table, "outside": outside},
-                                              ensure_ascii=False, indent=1), encoding="utf-8")
+        Path(args.json).write_text(json.dumps({"results": lab["results"], "runs": lab["per_run"],
+                                               "outside": lab["outside"]}, ensure_ascii=False, indent=1),
+                                   encoding="utf-8")
         print("\nyazıldı:", args.json)
     return 0
 

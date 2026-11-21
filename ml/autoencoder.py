@@ -193,6 +193,20 @@ def run(rows, seeds=SEEDS, hidden=HIDDEN):
     }
 
 
+def panel_summary(rep):
+    """Panelin gösterdiği küçük özet (tür başına alarm oranları, yanlış alarm oranları)."""
+    ae, oth, vol, c = rep["ae"], rep["others"], rep["volume"], rep["counts"]
+    q1, q2 = QUANTILES
+    types = [{"name": label, "n": n, "rules": oth["rules"][label], "xgb": oth["xgb"][label],
+              "volume": vol[q1]["recall"][label], "ae": ae["recall"][q1][label]["mean"],
+              "ae_strict": ae["recall"][q2][label]["mean"], "auc": ae["auc"][label]["mean"]}
+             for label, n in sorted(c["attacks"].items(), key=lambda kv: -ae["auc"][kv[0]]["mean"])]
+    return {"hidden": rep["hidden"], "seeds": len(rep["seeds"]), "min_reliable": MIN_RELIABLE,
+            "fpr": {"rules": oth["fpr"]["rules"], "xgb": oth["fpr"]["xgb"], "volume": vol[q1]["fpr"],
+                    "ae": ae["fpr"][q1]["mean"], "ae_strict": ae["fpr"][q2]["mean"]},
+            "types": types}
+
+
 def format_report(rep):
     ae, oth, vol, c = rep["ae"], rep["others"], rep["volume"], rep["counts"]
     q1, q2 = QUANTILES

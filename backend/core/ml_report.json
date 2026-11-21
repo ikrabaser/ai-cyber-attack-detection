@@ -1,11 +1,159 @@
 {
+ "autoencoder": {
+  "fpr": {
+   "ae": 0.009778415104646795,
+   "ae_strict": 0.001058417836047663,
+   "rules": 0.00023899757588173034,
+   "volume": 0.009252620437706988,
+   "xgb": 0.0011949878794086518
+  },
+  "hidden": [
+   5,
+   3,
+   5
+  ],
+  "min_reliable": 30,
+  "seeds": 5,
+  "types": [
+   {
+    "ae": 0.9966386554621849,
+    "ae_strict": 0.6638655462184874,
+    "auc": 0.9992121974263434,
+    "n": 119,
+    "name": "ddos",
+    "rules": 0.0,
+    "volume": 0.9831932773109243,
+    "xgb": 0.0
+   },
+   {
+    "ae": 0.8685714285714285,
+    "ae_strict": 0.10285714285714284,
+    "auc": 0.9938551284490031,
+    "n": 35,
+    "name": "dos_goldeneye",
+    "rules": 0.0,
+    "volume": 0.05714285714285714,
+    "xgb": 0.0
+   },
+   {
+    "ae": 0.8266666666666668,
+    "ae_strict": 0.8,
+    "auc": 0.9840606826226,
+    "n": 30,
+    "name": "portscan",
+    "rules": 0.8,
+    "volume": 0.8,
+    "xgb": 1.0
+   },
+   {
+    "ae": 0.6882352941176471,
+    "ae_strict": 0.3794117647058824,
+    "auc": 0.9632139550483718,
+    "n": 136,
+    "name": "dos_slowloris",
+    "rules": 0.0,
+    "volume": 0.0,
+    "xgb": 0.014705882352941176
+   },
+   {
+    "ae": 0.9047619047619048,
+    "ae_strict": 0.8095238095238095,
+    "auc": 0.9532716654554203,
+    "n": 84,
+    "name": "dos_hulk",
+    "rules": 0.0,
+    "volume": 0.8571428571428571,
+    "xgb": 0.0
+   },
+   {
+    "ae": 0.0,
+    "ae_strict": 0.0,
+    "auc": 0.8687330901792778,
+    "n": 115,
+    "name": "webattack_xss",
+    "rules": 0.0,
+    "volume": 0.0,
+    "xgb": 0.017391304347826087
+   },
+   {
+    "ae": 0.2,
+    "ae_strict": 0.0,
+    "auc": 0.839893971984518,
+    "n": 11,
+    "name": "heartbleed",
+    "rules": 0.0,
+    "volume": 0.0,
+    "xgb": 0.0
+   },
+   {
+    "ae": 0.0,
+    "ae_strict": 0.0,
+    "auc": 0.8274177093152921,
+    "n": 236,
+    "name": "webattack_bruteforce",
+    "rules": 0.0,
+    "volume": 0.0,
+    "xgb": 0.15677966101694915
+   },
+   {
+    "ae": 0.0,
+    "ae_strict": 0.0,
+    "auc": 0.7964843944337952,
+    "n": 140,
+    "name": "ssh_patator",
+    "rules": 0.7357142857142858,
+    "volume": 0.0,
+    "xgb": 0.9571428571428572
+   },
+   {
+    "ae": 0.0,
+    "ae_strict": 0.0,
+    "auc": 0.6119020792789102,
+    "n": 141,
+    "name": "ftp_patator",
+    "rules": 0.9858156028368794,
+    "volume": 0.0,
+    "xgb": 0.9858156028368794
+   },
+   {
+    "ae": 0.10227272727272727,
+    "ae_strict": 0.07272727272727272,
+    "auc": 0.6026381297353335,
+    "n": 88,
+    "name": "dos_slowhttptest",
+    "rules": 0.0,
+    "volume": 0.06818181818181818,
+    "xgb": 0.011363636363636364
+   },
+   {
+    "ae": 0.0012121212121212121,
+    "ae_strict": 0.0,
+    "auc": 0.17742443382922743,
+    "n": 330,
+    "name": "bot",
+    "rules": 0.0,
+    "volume": 0.0,
+    "xgb": 0.0
+   },
+   {
+    "ae": 0.0,
+    "ae_strict": 0.0,
+    "auc": 0.17029886077822165,
+    "n": 12,
+    "name": "webattack_sql_injection",
+    "rules": 0.0,
+    "volume": 0.0,
+    "xgb": 0.4166666666666667
+   }
+  ]
+ },
  "classes": [
   "normal",
   "port_scan",
   "brute_force"
  ],
  "dataset": "LycoS-IDS2017 (CIC-IDS2017)",
- "generated": "2026-11-20",
+ "generated": "2026-11-21",
  "importance": [
   [
    "n_dst_ports",
@@ -36,6 +184,71 @@
    0.03273814916610718
   ]
  ],
+ "lab": {
+  "date": "2026-11-21",
+  "methods": [
+   {
+    "hits": {
+     "brute_force": [
+      0,
+      4
+     ],
+     "normal": [
+      22,
+      22
+     ],
+     "port_scan": [
+      7,
+      7
+     ]
+    },
+    "name": "XGBoost"
+   },
+   {
+    "hits": {
+     "brute_force": [
+      4,
+      4
+     ],
+     "normal": [
+      22,
+      22
+     ],
+     "port_scan": [
+      7,
+      7
+     ]
+    },
+    "name": "Kurallar (ssh.log ile)"
+   },
+   {
+    "hits": {
+     "brute_force": [
+      0,
+      4
+     ],
+     "normal": [
+      22,
+      22
+     ],
+     "port_scan": [
+      7,
+      7
+     ]
+    },
+    "name": "Kurallar (ssh.log yok)"
+   }
+  ],
+  "runs": 4,
+  "ssh_log": true,
+  "support": {
+   "brute_force": 4,
+   "normal": 22,
+   "port_scan": 7
+  },
+  "unmeasured_boundary": 6,
+  "windows": 33
+ },
  "port_scan_ports": {
   "bins": [
    "1-2",

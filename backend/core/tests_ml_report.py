@@ -78,3 +78,27 @@ class MlReportContentTests(TestCase):
         counts = self.report["split"]["counts"]
         self.assertEqual(sum(pp["train"]), counts["train"]["port_scan"])
         self.assertEqual(sum(pp["test"]), counts["test"]["port_scan"])
+
+    def test_autoencoder_section_is_consistent(self):
+        ae = self.report["autoencoder"]
+        self.assertEqual(len(ae["hidden"]), 3)
+        self.assertGreater(len(ae["types"]), 5)
+        for row in ae["types"]:
+            for key in ("rules", "xgb", "volume", "ae", "ae_strict", "auc"):
+                self.assertTrue(0.0 <= row[key] <= 1.0, (row["name"], key))
+            self.assertGreater(row["n"], 0)
+            self.assertLessEqual(row["ae_strict"], row["ae"] + 1e-9)  # sıkı eşik alarmı artıramaz
+        for key in ("rules", "xgb", "volume", "ae", "ae_strict"):
+            self.assertTrue(0.0 <= ae["fpr"][key] <= 1.0)
+        self.assertLess(ae["fpr"]["ae_strict"], ae["fpr"]["ae"])
+        # Kurallar ve XGBoost'un yanlış alarm oranı ana bölümle aynı sayıdır (aynı test normalleri).
+        self.assertAlmostEqual(ae["fpr"]["xgb"], self.report["xgb"]["fpr"], places=9)
+        self.assertAlmostEqual(ae["fpr"]["rules"], self.report["rules"]["fpr"], places=9)
+
+    def test_lab_section_hits_never_exceed_windows(self):
+        lab = self.report["lab"]
+        for method in lab["methods"]:
+            for cls, (hit, n) in method["hits"].items():
+                self.assertLessEqual(hit, n, (method["name"], cls))
+                self.assertEqual(n, lab["support"][cls])
+        self.assertEqual(sum(lab["support"].values()), lab["windows"])

@@ -3,7 +3,10 @@
 Panel bu dosyayı olduğu gibi okur (hesap yapmaz): sayılar burada, eğitimle aynı kodla
 üretilir. Veri veya model değişince bu betik yeniden çalıştırılır:
 
-    python export_report.py data/windows_lycos.csv --out ../backend/core/ml_report.json
+    python export_report.py data/windows_lycos.csv --out ../backend/core/ml_report.json \\
+        --lab ../lab/data/conn.log ../lab/data/runs.jsonl
+
+Autoencoder (5 tohum) yaklaşık 1 dk sürer; `--no-ae` ile atlanır. `--lab` verilmezse lab bölümü eklenmez.
 """
 
 import argparse
@@ -35,12 +38,12 @@ def split_counts(rows):
     return out
 
 
-def build_report(rows):
+def build_report(rows, lab=None, with_ae=True):
     train_rows = [r for r in rows if r["split"] == "train"]
     test_rows = [r for r in rows if r["split"] == "test"]
     model = train(train_rows)
     ports = lambda part: port_histogram([r for r in part if r["cls"] == "port_scan"])
-    return {
+    report = {
         "generated": date.today().isoformat(),
         "dataset": "LycoS-IDS2017 (CIC-IDS2017)",
         "window": "(kaynak IP, 10 sn)",
@@ -56,14 +59,27 @@ def build_report(rows):
             "test": ports(test_rows),
         },
     }
+    if with_ae:
+        import autoencoder
+
+        report["autoencoder"] = autoencoder.panel_summary(autoencoder.run(rows))
+    if lab:
+        import lab_eval
+
+        conn_log, runs_path = lab
+        result = lab_eval.run_lab(conn_log, runs_path, train_rows)
+        report["lab"] = lab_eval.panel_summary(result)
+    return report
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("csv")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--lab", nargs=2, metavar=("CONN_LOG", "RUNS"), help="lab doğrulamasını da ekle")
+    ap.add_argument("--no-ae", action="store_true", help="autoencoder'ı çalıştırma (yaklaşık 1 dk sürer)")
     args = ap.parse_args(argv)
-    report = build_report(assign_split(load_windows(args.csv)))
+    report = build_report(assign_split(load_windows(args.csv)), lab=args.lab, with_ae=not args.no_ae)
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(report, fh, ensure_ascii=False, indent=1, sort_keys=True)
         fh.write("\n")

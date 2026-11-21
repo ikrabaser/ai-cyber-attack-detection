@@ -149,6 +149,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 .src-kpis { padding: 12px 12px 0; margin-bottom: 0; }
 .charts.one { grid-template-columns: 1fr; }
 .cv.tall { height: 300px; }
+.cv.xtall { height: 500px; }
 .sub { margin: 0; padding: 10px 14px; font-size: 13px; color: var(--muted); font-weight: 500; border-top: 1px solid var(--line); }
 .cv { position: relative; height: 220px; }
 .cv-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; }
@@ -160,6 +161,9 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 .cm td.zero { color: var(--muted); }
 .ml-notes { margin: 0; padding: 4px 18px 16px 34px; color: var(--muted); line-height: 1.6; }
 .ml-notes li { margin: 4px 0; }
+.cm.heat td { font-variant-numeric: tabular-nums; }
+#ml-ae-table th, #ml-ae-table td { padding: 8px 9px; }
+#ml-ae-table th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
 
 .flow { list-style: none; margin: 0; padding: 4px 0; max-height: 360px; overflow-y: auto; }
 .flow li { display: grid; grid-template-columns: 84px 92px 1fr; gap: 4px 12px; align-items: baseline; padding: 6px 14px; border-bottom: 1px solid var(--line); }
@@ -393,6 +397,26 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
         <figure class="chartbox">
           <figcaption>Kurallar (tetiklenen her alarm)</figcaption>
           <div class="table-wrap"><table id="ml-cm-rules" aria-label="Kurallar karışıklık matrisi"></table></div>
+        </figure>
+      </div>
+      <h3 class="sub" id="ml-ae-title">Bilinmeyen saldırılar: Autoencoder (yalnızca normal trafikle eğitildi)</h3>
+      <p class="soc-intro" id="ml-ae-note"></p>
+      <div class="charts">
+        <figure class="chartbox">
+          <figcaption>Alarm verilen pencere oranı: DoS ailesi ve port tarama</figcaption>
+          <div class="cv xtall"><canvas id="ch-ml-ae" role="img" aria-label="DoS ailesi ve port taramada kurallar, XGBoost, bağlantı sayısı eşiği ve Autoencoder alarm oranı"></canvas></div>
+        </figure>
+        <figure class="chartbox">
+          <figcaption>Tüm saldırı türleri (hücre rengi alarm oranını gösterir)</figcaption>
+          <div class="table-wrap"><table id="ml-ae-table" aria-label="Saldırı türüne göre alarm oranları"></table></div>
+        </figure>
+      </div>
+      <h3 class="sub" id="ml-lab-title">Laboratuvar doğrulaması (kendi ağımızda nmap ve Hydra)</h3>
+      <p class="soc-intro" id="ml-lab-note"></p>
+      <div class="charts one">
+        <figure class="chartbox">
+          <figcaption>Doğru sınıfı bulunan pencere sayısı / ölçülen pencere</figcaption>
+          <div class="table-wrap"><table id="ml-lab-table" aria-label="Laboratuvarda yöntem ve sınıfa göre doğru bulunan pencere sayısı"></table></div>
         </figure>
       </div>
       <h3 class="sub">Okurken dikkat</h3>
@@ -1304,9 +1328,15 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     'Test kümesinin neredeyse tamamı normal pencere; bu yüzden doğruluk (accuracy) yanıltıcıdır, sınıf başına kesinlik/duyarlılık ve makro-F1 esas alınır.',
     'Port tarama testi yalnızca birkaç düzine pencere içerir ve testteki taramalar eğitimdekilerden daha geniştir (sağdaki dağılım grafiği); bu sınıfın skorları kesin bir sonuç değil, işarettir.',
     'XGBoost’un “yanlış alarm” saydığı pencerelerin bir kısmı, saldırgan IP’sinin etiketsiz kalan pencereleri olabilir (etiket gürültüsü). Kurallar aynı veride çalıştırılır ve alarm verdikleri her pencere sayılır.',
-    'Kendi lab’ımızda (nmap, Hydra) ayrıca denendi: port tarama modelde de kurallarda da yakalandı; Hydra SSH kaba kuvvetini yalnızca ssh.log kullanan kurallar yakaladı, model conn.log özelliklerinden göremedi. Lab örneği çok küçük (7 tarama, 4 Hydra penceresi), sonuç bir işarettir.',
     'Bu sekme panelin canlı kararlarını etkilemez.',
   ];
+  const ML_TYPE = {
+    ddos: 'DDoS', dos_hulk: 'DoS Hulk', dos_goldeneye: 'DoS GoldenEye', dos_slowloris: 'DoS Slowloris',
+    dos_slowhttptest: 'DoS SlowHTTPTest', portscan: 'Port tarama (test)', ssh_patator: 'SSH-Patator (test)',
+    ftp_patator: 'FTP-Patator (test)', webattack_xss: 'Web: XSS', webattack_bruteforce: 'Web: kaba kuvvet',
+    webattack_sql_injection: 'Web: SQL injection', bot: 'Bot', heartbleed: 'Heartbleed',
+  };
+  const ML_AE_CHART = ['ddos', 'dos_hulk', 'dos_goldeneye', 'dos_slowloris', 'portscan'];
   let mlData = null;
   let mlLoaded = false;
   let mlBusy = false;
@@ -1314,6 +1344,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
   const pct = (v) => (v * 100).toFixed(1).replace('.', ',') + '%';
   const pct2 = (v) => (v * 100).toFixed(2).replace('.', ',') + '%';
   const f3 = (v) => v.toFixed(3).replace('.', ',');
+  const f2 = (v) => v.toFixed(2).replace('.', ',');
 
   function mlKpi(value, label) {
     const d = el('div', { cls: 'kpi' });
@@ -1343,10 +1374,65 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     t.appendChild(body);
   }
 
+  // Hücre rengi: değer ne kadar yüksekse o kadar dolu (CSSOM ile; satır içi style özniteliği CSP'ye takılırdı).
+  function heat(cell, value, color) {
+    cell.style.background = `color-mix(in srgb, ${color} ${Math.round(Math.max(0, Math.min(1, value)) * 55)}%, transparent)`;
+  }
+
+  function renderMlTables(c) {
+    const d = mlData;
+    if (d.autoencoder) {
+      const a = d.autoencoder;
+      const t = $('ml-ae-table');
+      t.replaceChildren();
+      t.classList.add('cm', 'heat');
+      const head = el('tr');
+      for (const h of ['Tür', 'Pencere', 'Kurallar', 'XGBoost', 'Bağlantı eşiği', 'Autoenc.', 'Autoenc. (sıkı)']) head.appendChild(el('th', { text: h }));
+      t.appendChild(el('thead', null, head));
+      const body = el('tbody');
+      for (const r of a.types) {
+        const tr = el('tr');
+        tr.appendChild(el('td', { text: (ML_TYPE[r.name] || r.name) + (r.n < a.min_reliable ? ' *' : '') }));
+        tr.appendChild(el('td', { text: r.n.toLocaleString('tr-TR') }));
+        for (const v of [r.rules, r.xgb, r.volume, r.ae, r.ae_strict]) {
+          const td = el('td', { text: f2(v) });
+          heat(td, v, c.info);
+          tr.appendChild(td);
+        }
+        body.appendChild(tr);
+      }
+      t.appendChild(body);
+    }
+    if (d.lab) {
+      const l = d.lab;
+      const t = $('ml-lab-table');
+      t.replaceChildren();
+      t.classList.add('cm', 'heat');
+      const head = el('tr');
+      head.appendChild(el('th', { text: 'Yöntem' }));
+      for (const k of d.classes) head.appendChild(el('th', { text: `${ML_CLASS[k] || k} (${l.support[k]})` }));
+      t.appendChild(el('thead', null, head));
+      const body = el('tbody');
+      for (const m of l.methods) {
+        const tr = el('tr');
+        tr.appendChild(el('td', { text: m.name }));
+        for (const k of d.classes) {
+          const [hit, n] = m.hits[k];
+          const td = el('td', { text: `${hit}/${n}` });
+          if (n) heat(td, hit / n, c.info);
+          tr.appendChild(td);
+        }
+        body.appendChild(tr);
+      }
+      t.appendChild(body);
+    }
+  }
+
   function renderMl() {
     const d = mlData;
     if (!d || typeof Chart === 'undefined') return;
     const c = palette();
+    renderMlTables(c);
     const base = { responsive: true, maintainAspectRatio: false, animation: false };
     const classes = d.classes;
     const labels = classes.map((k) => ML_CLASS[k] || k);
@@ -1380,6 +1466,24 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
           indexAxis: 'y',
           plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => pct(ctx.parsed.x) } } },
           scales: { x: { beginAtZero: true, ticks: { color: c.text, callback: (v) => Math.round(v * 100) + '%' }, grid: { color: c.grid }, border: { color: c.grid } }, y: nameAxis },
+        }),
+      });
+    }
+
+    if (d.autoencoder && !charts.mlAe) {
+      const byName = Object.fromEntries(d.autoencoder.types.map((r) => [r.name, r]));
+      const names = ML_AE_CHART.filter((k) => byName[k]);
+      const series = (label, key, color) => ({ label, data: names.map((k) => byName[k][key]), backgroundColor: color, maxBarThickness: 22 });
+      charts.mlAe = new Chart($('ch-ml-ae'), {
+        type: 'bar',
+        data: { labels: names.map((k) => ML_TYPE[k] || k), datasets: [
+          series('Kurallar', 'rules', c.text), series('XGBoost', 'xgb', c.warn),
+          series('Bağlantı sayısı eşiği', 'volume', c.ok), series('Autoencoder', 'ae', c.info),
+        ] },
+        options: Object.assign({}, base, {
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${f2(ctx.parsed.y)}` } } },
+          scales: { x: nameAxis, y: axisY(1) },
         }),
       });
     }
@@ -1423,6 +1527,19 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     for (const id of ['ml-cm-xgb', 'ml-cm-rules']) $(id).classList.add('cm');
     const nl = $('ml-notes');
     nl.replaceChildren(...ML_NOTES.map((t) => el('li', { text: t })));
+    if (d.autoencoder) {
+      const a = d.autoencoder;
+      $('ml-ae-note').textContent = `Autoencoder yalnızca normal pencerelerle eğitildi (7-${a.hidden.join('-')}-7, ${a.seeds} tohumun ortalaması); yeniden kurma hatası büyük olan pencere alarm sayılır. `
+        + `Yanlış alarm oranı: kurallar ${pct2(a.fpr.rules)}, XGBoost ${pct2(a.fpr.xgb)}, bağlantı sayısı eşiği ${pct2(a.fpr.volume)}, Autoencoder ${pct2(a.fpr.ae)} (sıkı eşikte ${pct2(a.fpr.ae_strict)}). `
+        + '“Bağlantı sayısı eşiği” yalnızca bağlantı sayısına konan eşiktir, en basit rakiptir. Autoencoder bilinen sınıflarda değil, DoS ailesinde güçlüdür; web saldırıları ve bot bu 7 özellikle ayrılamıyor. * ile işaretli türlerde pencere sayısı azdır, sonuç bir işarettir.';
+    }
+    if (d.lab) {
+      const l = d.lab;
+      $('ml-lab-note').textContent = `${l.date} tarihli temiz koşu: ${l.runs} koşu, ${l.windows} tam pencere (${l.unmeasured_boundary} yarım pencere ölçüme alınmadı). `
+        + 'Port tarama CIC’ten kendi ağımıza aktarıldı. Kaba kuvveti yalnızca ssh.log kullanan kural gördü: Hydra bir SSH bağlantısında birkaç parola dener, conn.log’ta bu normal bir oturumdan ayırt edilemez. Örnek küçüktür, sonuç bir işarettir.';
+    }
+    $('ml-ae-title').hidden = $('ml-ae-note').hidden = !d.autoencoder;
+    $('ml-lab-title').hidden = $('ml-lab-note').hidden = !d.lab;
     $('ml-sub').textContent = `${d.dataset} · ${d.window} · rapor tarihi ${d.generated}`;
   }
 
