@@ -5,6 +5,7 @@ Kullanım:
     python detect.py sample/conn.log --send            # backend'e de gönder
     python detect.py sample/conn.log --send --delay 1  # olaylar arası 1 sn bekle (panelde canlı izlemek için)
     python detect.py lab/data/conn.log --follow --send # dosyayı CANLI takip et (Ctrl+C ile dur)
+    python detect.py sample/conn.log --model models/xgb.json   # kurallara ek olarak XGBoost modelini de kullan
 
 Backend adresi ve token: --url / --token ya da SENSOR_API_TOKEN ortam değişkeni.
 """
@@ -19,7 +20,8 @@ from datetime import datetime
 from client import DEFAULT_URL, build_event, send_event
 from features import WINDOW_SECONDS, extract
 from follow import LiveMonitor, LogTail
-from rules import detect
+from rules import MODEL_MIN_PROB, detect
+from tree_model import TreeModel
 from zeek_reader import read_log
 
 
@@ -46,13 +48,14 @@ def ssh_log_path(args):
     return args.ssh_log or os.path.join(os.path.dirname(args.path), "ssh.log")
 
 
-def follow(args, sleep=time.sleep, clock=time.monotonic, stop=lambda: False, out=sys.stdout, err=sys.stderr):
+def follow(args, sleep=time.sleep, clock=time.monotonic, stop=lambda: False, out=sys.stdout, err=sys.stderr,
+           model=None):
     """conn.log'u canlı takip eder; kapanan her pencereyi değerlendirir, tespitleri gönderir.
 
     Çıkış kodu: 0 normal durma, 1 token reddedildi. Backend'e ulaşılamazsa durmaz: o olay atlanır,
     sayılır ve izleme sürer (sensör backend yüzünden körleşmesin).
     """
-    monitor = LiveMonitor(args.window, args.grace, clock)
+    monitor = LiveMonitor(args.window, args.grace, clock, model, getattr(args, "model_threshold", None))
     stats = {"sent": 0, "failed": 0}
 
     def warn(exc):
@@ -117,6 +120,9 @@ def main(argv=None):
     parser.add_argument("--delay", type=float, default=0.0, help="gönderimler arası bekleme (sn)")
     parser.add_argument("--ssh-log", help="Zeek ssh.log yolu (varsayılan: conn.log'un yanındaki ssh.log, varsa)")
     parser.add_argument("--no-ssh", action="store_true", help="ssh.log'u kullanma (yalnızca conn.log'a bak)")
+    parser.add_argument("--model", help="XGBoost modeli (ml/export_model.py çıktısı); kurallara ek ikinci sinyal olur")
+    parser.add_argument("--model-threshold", type=float, default=MODEL_MIN_PROB,
+                        help=f"modelin saldırı saymak için gereken olasılığı (varsayılan {MODEL_MIN_PROB})")
     parser.add_argument("--follow", action="store_true",
                         help="dosyayı canlı takip et (tail -f gibi); pencereler kapandıkça değerlendirilir")
     parser.add_argument("--from-start", action="store_true",
@@ -140,9 +146,22 @@ def main(argv=None):
             parser.error("--grace 0 ya da büyük, --poll sıfırdan büyük olmalı")
     if args.send and not args.token:
         parser.error("--send için token gerekli (--token ya da SENSOR_API_TOKEN)")
+    if not 0.0 < args.model_threshold < 1.0:
+        parser.error("--model-threshold 0 ile 1 arasında olmalı")
+    if args.model_threshold != MODEL_MIN_PROB and not args.model:
+        parser.error("--model-threshold yalnızca --model ile kullanılır")
+
+    model = None
+    if args.model:
+        try:
+            model = TreeModel.load(args.model)
+        except (OSError, ValueError, KeyError) as exc:  # JSONDecodeError de ValueError'dır
+            print(f"model yüklenemedi ({args.model}): {exc}", file=sys.stderr)
+            return 1
+        print(f"model yüklendi: {args.model} ({len(model.trees)} ağaç, eşik {args.model_threshold})")
 
     if args.follow:
-        return follow(args)
+        return follow(args, model=model)
 
     ssh_records = []
     ssh_path = ssh_log_path(args)
@@ -155,7 +174,7 @@ def main(argv=None):
         print(f"{ssh_path}: {len(ssh_records)} SSH kaydı kullanıldı")
 
     rows = extract(read_log(args.path), window=args.window, ssh_records=ssh_records)
-    found = detect(rows, window=args.window)
+    found = detect(rows, window=args.window, model=model, model_threshold=args.model_threshold)
     print(f"{len(rows)} pencere incelendi, {len(found)} tespit\n")
 
     for i, det in enumerate(found):

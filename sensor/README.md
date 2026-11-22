@@ -185,6 +185,39 @@ Nasıl çalışır ve neye dikkat etmeli:
 - **Zeek yeniden başlarsa:** Dosya kısalırsa (Zeek `conn.log`'u sıfırlar) baştan okunur.
 - **Durdurma:** Ctrl+C; çıkışta özet yazılır, kapanmamış pencereler gönderilmez.
 
+## Modeli ikinci sinyal olarak kullanmak (`--model`)
+
+Eğitilmiş XGBoost modeli (`ml/`) kurallara EK olarak çalışabilir. Sensör xgboost kurmaz: model
+`ml/export_model.py` ile küçük bir JSON'a çevrilir (`models/xgb.json`, 600 ağaç, ~200 KB), `tree_model.py`
+ağaçları standart kütüphaneyle gezer (XGBoost'la aynı olasılıkları verdiği `ml/test_export_model.py` ile sınanır).
+
+    python detect.py sample/conn.log --model models/xgb.json
+    python detect.py lab/data/conn.log --follow --send --model models/xgb.json --model-threshold 0.9
+
+Karar kuralları:
+
+- **Kural tetiklendiyse karar kuralındır.** Skor değişmez; nedenlere "model de aynı fikirde" ya da
+  "model farklı tür öneriyor" notu eklenir.
+- **Kural susmuş, model bir saldırı sınıfını `--model-threshold` (varsayılan 0,90) üstünde olasılıkla
+  görüyorsa** "yalnızca model" tespiti çıkar. Skoru 0,50 (eşikte) ile 0,80 (olasılık 1,0) arasındadır, ısrar
+  bonusu dahil en çok 0,85: yani kural kanıtı olmadan **"high" çıkmaz**.
+- Model yoksa davranış öncekiyle birebir aynıdır.
+
+Neden kuralların yerine geçmiyor? Laboratuvarda brute force'u model yakalayamadı (0/4), ssh.log'lu kurallar 4/4
+yakaladı. Model ise kuralların kaçırdığı bazı taramaları/brute force pencerelerini yakalıyor. CIC test
+pencerelerinde (tek pencere, ısrar bonusu yok, `ssh.log` yok) ölçüm:
+
+| Eşik | Tarama (30) | Brute force (281) | Normalde yanlış alarm (29.289) |
+| --- | --- | --- | --- |
+| yalnızca kurallar | 24 | 242 | 7 |
+| + model, 0,99 | 27 | 274 | 10 |
+| + model, 0,95 | 29 | 274 | 19 |
+| + model, 0,90 (varsayılan) | 30 | 274 | 20 |
+| + model, 0,50 | 30 | 274 | 35 |
+
+Dikkat: tarama sınıfı test kümesinde yalnızca 30 pencere; sonuçlar kaba bir işarettir, kesin başarı değildir.
+Modelin yeniden üretimi: `cd ml; python train_xgb.py data/windows_lycos.csv --save data/xgb.json; python export_model.py data/xgb.json ../sensor/models/xgb.json`.
+
 ## Dosyalar
 
 - `zeek_reader.py`: Zeek TSV (varsayılan) ve JSON biçimini okuyan, bağımlılıksız okuyucu.
@@ -194,6 +227,7 @@ Nasıl çalışır ve neye dikkat etmeli:
 - `rules.py`: kurallar (port taraması, brute force: bağlantı ve parola kanıtı) + ısrar bonusu (Kademe 3).
 - `client.py`: tespiti backend'in JSON biçimine çevirir ve `POST /api/events/` ile yollar (Kademe 3).
 - `detect.py`: conn.log → özellik → kural → (isteğe bağlı) backend komutu (Kademe 3); `--follow` ile canlı.
+- `tree_model.py`: XGBoost modelini XGBoost'suz çalıştıran ağaç yorumlayıcısı; `models/xgb.json`: dışa aktarılmış model.
 - `follow.py`: dosyayı takip eden `tail_records` ve pencereleri kapatan `LiveMonitor` (canlı izleme).
 - `sample/conn.log`: sentetik örnek.
-- `test_zeek_reader.py`, `test_features.py`, `test_rules.py`, `test_client.py`, `test_follow.py`: testler (103).
+- `test_zeek_reader.py`, `test_features.py`, `test_rules.py`, `test_client.py`, `test_follow.py`, `test_model.py`: testler.

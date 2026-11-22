@@ -111,11 +111,12 @@ class _Bucket:
 class LiveMonitor:
     """Kayıtları pencerelere biriktirir; süresi dolan pencereleri sırayla kapatıp kurallara verir."""
 
-    def __init__(self, window=WINDOW_SECONDS, grace=8.0, clock=time.monotonic):
+    def __init__(self, window=WINDOW_SECONDS, grace=8.0, clock=time.monotonic, model=None, model_threshold=None):
         self.window = window
         self.grace = grace
         self.clock = clock
-        self.detector = Detector(window)
+        extra = {} if model_threshold is None else {"model_threshold": model_threshold}
+        self.detector = Detector(window, model=model, **extra)
         self.pending = defaultdict(_Bucket)  # pencere başlangıcı -> o penceredeki kayıtlar
         self.closed_through = None        # kapanan en son pencerenin başlangıcı
         self.offset = None                # en büyük (kayıt zamanı - duvar saati)

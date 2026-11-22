@@ -141,3 +141,16 @@ iyidir; autoencoder'ın asıl katkısı çok özelliği birlikte görmesiyle Gol
 saldırıları, bot ve slowhttptest bu 7 bağlantı özelliğiyle normalden ayrılamıyor (bot pencereleri normalden bile
 "daha normal"); yük (HTTP içeriği) görünmeden bu mümkün değil. (4) Heartbleed ve SQL injection 12 pencere,
 sonuçları işaret.
+
+## ML-7: Modeli sensöre bağlamak
+
+Eğitilmiş XGBoost, canlı sensörde kurallara ek ikinci sinyal olarak çalışabilir (`sensor/detect.py --model`).
+Sensör xgboost kurmadığı için model önce küçük bir JSON'a çevrilir:
+
+    python export_model.py data/xgb.json ../sensor/models/xgb.json
+
+`sensor/tree_model.py` bu JSON'daki ağaçları standart kütüphaneyle gezip XGBoost'la aynı olasılıkları üretir
+(`test_export_model.py`: toy veride en çok 1e-5 fark; gerçek modelde 3000 pencerede en çok 2e-7). Karar kuralları
+ve ölçüm tablosu için `sensor/README.md`. Kısaca: kural tetiklenirse karar kuralındır, kural susup model >= 0,90
+emin ise skoru en çok 0,85 olan "yalnızca model" tespiti çıkar. Tek pencerede kural + model, taramada 24 → 30 / 30,
+brute force'ta 242 → 274 / 281 yakalar; normalde yanlış alarm 7 → 20 (29.289 pencere).

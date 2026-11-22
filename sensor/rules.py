@@ -24,6 +24,14 @@ zorunda değil: araya o kaynaktan HİÇ kayıt gelmeyen pencereler girebilir (en
 200 sn'lik bir saldırı 40-60 sn arayla 5 ayrı patlama gibi görünür. Araya o kaynaktan kuralı
 tetiklemeyen bir kayıt girerse (kaynak o pencerede başka türlü davrandı) zincir yine kopar.
 
+İsteğe bağlı ikinci sinyal: eğitilmiş XGBoost modeli (`tree_model.py`, `Detector(model=...)`). Kurallara
+EK olarak çalışır, onların yerini almaz: (1) kural tetiklendiyse karar kuralındır (model yalnızca "aynı
+fikirde" ya da "başka tür öneriyor" notu ekler); (2) kural tetiklenmedi ama model bir saldırı sınıfını
+yeterince emin (varsayılan olasılık >= 0,90) görüyorsa "yalnızca model" tespiti üretilir. Böyle tespitin
+skoru en çok MODEL_ONLY_MAX (0,85) olur: kural kanıtı olmadan "high" çıkmaz. Neden böyle? Laboratuvarda
+brute force'u modelin hiç yakalayamadığı (0/4), kuralların ssh.log ile 4/4 yakaladığı görüldü; port taramasında
+ise ikisi de iyi. Model olmadan davranış tamamen aynı kalır.
+
 Kurallar bilerek SÜREYE (mean_duration) bakmaz: Kademe 2'de gördük, tek bir uzun meşru bağlantı
 ortalamayı şişirip yanlış alarm üretiyordu.
 """
@@ -49,6 +57,11 @@ STREAK_MAX_GAP_WINDOWS = 9   # iki tetiklenme arası en çok bu kadar pencere (v
 
 STREAK_BONUS = 0.10
 STREAK_BONUS_MAX = 0.40
+
+MODEL_MIN_PROB = 0.90        # model bir saldırı sınıfını en az bu olasılıkla görürse "model sinyali" sayılır
+MODEL_BASE_SCORE = 0.50      # eşikte (p = MODEL_MIN_PROB) yalnızca-model skoru
+MODEL_SCORE_SPAN = 0.30      # p = 1,0'da skor 0,50 + 0,30 = 0,80
+MODEL_ONLY_MAX = 0.85        # kural kanıtı yoksa (ısrar bonusu dahil) skor bunu geçemez -> "high" olmaz
 
 # Backend'in risk düzeyi eşikleriyle aynı olmalı (backend/config/settings.py).
 MEDIUM_AT, HIGH_AT = 0.7, 0.9
@@ -127,12 +140,24 @@ class Detector:
     sıralı verilmelidir.
     """
 
-    def __init__(self, window=WINDOW_SECONDS):
+    def __init__(self, window=WINDOW_SECONDS, model=None, model_threshold=MODEL_MIN_PROB):
+        if not 0.0 < model_threshold < 1.0:
+            raise ValueError("model_threshold 0 ile 1 arasında olmalı")
         self.window = window
-        self.streaks = {}  # (kaynak, kural) -> (son tetiklenen pencere başlangıcı, tetiklenme sayısı)
+        self.model = model  # `tree_model.TreeModel` ya da None (yalnızca kurallar)
+        self.model_threshold = model_threshold
+        self.streaks = {}  # (kaynak, kural | "model") -> (son tetiklenen pencere başlangıcı, tetiklenme sayısı)
 
-    def feed(self, row):
-        """Bir satır -> o (kaynak, pencere) için tetiklenen kuralların en yüksek skorlusu, yoksa None."""
+    def _streak(self, key, window_start):
+        """Israr zincirini bir adım ilerletir; (tetiklenme sayısı, bonus) döner."""
+        prev = self.streaks.get(key)
+        gap = window_start - prev[0] if prev is not None else None
+        continues = gap is not None and 0 < gap <= STREAK_MAX_GAP_WINDOWS * self.window
+        count = prev[1] + 1 if continues else 1
+        self.streaks[key] = (window_start, count)
+        return count, min(STREAK_BONUS_MAX, STREAK_BONUS * (count - 1))
+
+    def _rules(self, row):
         best = None
         for name, rule in RULES.items():
             key = (row["src_ip"], name)
@@ -142,13 +167,7 @@ class Detector:
                 continue
 
             base, reasons = hit
-            prev = self.streaks.get(key)
-            gap = row["window_start"] - prev[0] if prev is not None else None
-            continues = gap is not None and 0 < gap <= STREAK_MAX_GAP_WINDOWS * self.window
-            count = prev[1] + 1 if continues else 1
-            self.streaks[key] = (row["window_start"], count)
-
-            bonus = min(STREAK_BONUS_MAX, STREAK_BONUS * (count - 1))
+            count, bonus = self._streak(key, row["window_start"])
             score = min(1.0, base + bonus)
             if count > 1:
                 reasons = [*reasons, f"{count}. tetiklenen pencere (+{bonus:.2f})"]
@@ -156,13 +175,51 @@ class Detector:
                 best = Detection(row["src_ip"], row["window_start"], name, score, reasons, row)
         return best
 
+    def _model_signal(self, row):
+        """Model bir saldırı sınıfını yeterince emin görüyorsa (sınıf, olasılık), yoksa None."""
+        proba = self.model.predict_proba(row)
+        cls = max(proba, key=proba.get)
+        if cls == "normal" or proba[cls] < self.model_threshold:
+            self.streaks.pop((row["src_ip"], "model"), None)
+            return None
+        return cls, proba[cls]
 
-def detect(rows, window=WINDOW_SECONDS):
+    def feed(self, row):
+        """Bir satır -> o (kaynak, pencere) için en yüksek skorlu tespit, yoksa None.
+
+        Model yoksa yalnızca kurallara bakılır. Model varsa: kural tetiklendiyse karar kuralındır (nota
+        modelin görüşü eklenir); tetiklenmediyse ve model emin bir saldırı görüyorsa "yalnızca model"
+        tespiti üretilir (skoru MODEL_ONLY_MAX ile sınırlı).
+        """
+        best = self._rules(row)
+        if self.model is None:
+            return best
+
+        signal = self._model_signal(row)
+        if signal is None:
+            return best
+        cls, p = signal
+        count, bonus = self._streak((row["src_ip"], "model"), row["window_start"])
+        if best is not None:
+            note = (f"model de aynı fikirde ({cls}, olasılık {p:.2f})" if best.attack_type == cls
+                    else f"model farklı tür öneriyor: {cls} (olasılık {p:.2f})")
+            best.reasons.append(note)
+            return best
+
+        base = MODEL_BASE_SCORE + MODEL_SCORE_SPAN * (p - self.model_threshold) / (1.0 - self.model_threshold)
+        score = min(MODEL_ONLY_MAX, base + bonus)
+        reasons = [f"yalnızca model: {cls} olasılığı {p:.2f}, kurallar tetiklenmedi"]
+        if count > 1:
+            reasons.append(f"model {count}. pencerede ısrar ediyor (+{bonus:.2f})")
+        return Detection(row["src_ip"], row["window_start"], cls, score, reasons, row)
+
+
+def detect(rows, window=WINDOW_SECONDS, model=None, model_threshold=MODEL_MIN_PROB):
     """Özellik satırlarını (zamana göre sıralı) tarar, tetiklenen kurallar için Detection döndürür.
 
     Her (kaynak, pencere) için en fazla bir sonuç: tetiklenen kuralların en yüksek skorlusu.
     """
-    detector = Detector(window)
+    detector = Detector(window, model, model_threshold)
     found = []
     for row in rows:
         det = detector.feed(row)
