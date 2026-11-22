@@ -171,18 +171,59 @@ bir saldırı penceresine 5 dakikadan yakın. Yani tarama/saldırı kuyruğuna b
 | --- | --- | --- | --- | --- | --- | --- |
 | kurallar | tüm test (29.289 normal) | 7 | 0,024 | 0,80 | 0,80 | 0,908 |
 | kurallar | şüpheliler hariç (29.205) | 0 | 0,000 | 1,00 | 0,80 | 0,938 |
-| XGBoost | tüm test | 35 | 0,119 | 0,57 | 1,00 | 0,896 |
-| XGBoost | şüpheliler hariç | 16 | 0,055 | 0,83 | 1,00 | 0,959 |
-| XGBoost (şüpheliler eğitimden de çıkarıldı) | tüm test | 29 | 0,099 | 0,62 | 1,00 | 0,912 |
-| XGBoost (şüpheliler eğitimden de çıkarıldı) | şüpheliler hariç | 10 | 0,034 | 0,97 | 1,00 | 0,984 |
+| XGBoost | tüm test | 31 | 0,106 | 0,58 | 0,97 | 0,897 |
+| XGBoost | şüpheliler hariç | 12 | 0,041 | 0,88 | 0,97 | 0,964 |
+| XGBoost (şüpheliler eğitimden de çıkarıldı) | tüm test | 35 | 0,119 | 0,57 | 0,97 | 0,893 |
+| XGBoost (şüpheliler eğitimden de çıkarıldı) | şüpheliler hariç | 16 | 0,055 | 0,85 | 0,97 | 0,957 |
+
+(XGBoost satırları İkra'nın makinesindeki çıktıdan; kurallar her ortamda aynı.)
 
 Okuma:
-- Şüpheli pencereler değerlendirmeden çıkınca modelin yanlış alarmı 35 → 16'ya, kuralların 7 → 0'a düşüyor.
-  Yani yanlış alarmın yarısından fazlası (kurallarda hepsi) bu adresten.
-- Şüpheliler eğitimden de çıkarılınca model daha iyi (16 → 10 yanlış alarm): eğitimdeki şüpheli "normal"ler
-  modele "hepsi başarısız birkaç bağlantı = normal" diye yanlış öğretiyor olabilir.
+- Şüpheli pencereler değerlendirmeden çıkınca modelin yanlış alarmı 31 → 12'ye, kuralların 7 → 0'a düşüyor.
+  Yani yanlış alarmın yarısından fazlası (kurallarda hepsi) bu adresten. Bu bulgu iki ortamda da (bizim
+  sandbox'ta 35 → 16) ve 10 farklı rastgele tohumda (14-18 aralığı) tekrarlandı: sağlam.
+- Şüphelileri EĞİTİMDEN de çıkarmanın etkisi sağlam DEĞİL. Sandbox'ta (xgboost 3.4.1) 10 tohumun hepsinde
+  yanlış alarm azaldı (35 → 30), ama İkra'nın makinesinde arttı (31 → 35). Aynı veri ve aynı sabit
+  parametreler, farklı sonuç: XGBoost sürümü/platformu farkı. Bu yüzden "eğitimdeki etiket gürültüsü modeli
+  bozuyor" demek için henüz kanıt yok. Not: model sonuçları sürüme göre birkaç yanlış alarm oynayabilir;
+  sensöre giren model `sensor/models/xgb.json` dosyasıdır (yeniden eğitim aynı ağaçları vermeyebilir).
 - Hiçbir şey kanıtlanmadı: pcap olmadan bu pencerelerin saldırı olduğunu söyleyemeyiz, sadece etiketin
-  güvenilmez olduğuna dair güçlü işaret var. Pencereler yeniden etiketlenmedi.
-- Kalan 10-16 yanlış alarm başka kaynaklardan (örneğin DNS sunucusu 192.168.10.3'ün 53. porta 12 bağlantısı
+  güvenilmez olduğuna dair güçlü bir işaret var. Pencereler yeniden etiketlenmedi.
+- Kalan 12-16 yanlış alarm başka kaynaklardan (örneğin DNS sunucusu 192.168.10.3'ün 53. porta 12 bağlantısı
   "brute_force" görülmüş): bunlar gerçek model hatası.
 - Tarama sınıfı testte yalnızca 30 pencere; precision/recall oynak, kesin sonuç değil.
+
+## ML-9: H1, eşit yanlış alarm oranında karşılaştırma
+
+Bugüne dek kıyas "her yöntem kendi eşiğinde" yapıldı: kuralların yanlış alarmı %0,02, modelinki %0,1. Fazla alarm veren
+yöntem doğal olarak daha çok saldırı yakalar, bu adil değil. `equal_fpr.py` yanlış alarm oranını sabitler ve o
+orandaki yakalama oranına (recall, Wilson %95 güven aralığıyla) bakar:
+
+    python equal_fpr.py data/windows_lycos.csv
+
+Her sınıf için pencereye skor: model = sınıfın olasılığı; kurallar = o sınıfta tetiklenen kuralın risk skoru (ısrar
+bonusu dahil, tetiklenmediyse 0). CIC'de ssh.log yok, kuralların parola kanıtı kullanılamıyor.
+
+Sandbox çıktısı (xgboost 3.4.1; senin makinende birkaç pencere oynayabilir). Recall [güven aralığı]:
+
+| Sınıf | Normalde izin verilen yanlış alarm | Kurallar | XGBoost |
+| --- | --- | --- | --- |
+| port_scan (30 pencere) | %0,02 | 0,80 [0,63-0,90] | 0,33 [0,19-0,51] |
+| port_scan | %0,05 | 0,80 | 0,97 [0,83-0,99] |
+| port_scan | %0,10 ve üstü | 0,80 | 1,00 [0,89-1,00] |
+| brute_force (281 pencere) | %0,02 | 0,86 [0,82-0,90] | 0,97 [0,94-0,99] |
+| brute_force | %0,10 | 0,86 | 0,97 |
+| brute_force | %1 | 0,86 | 0,98 [0,96-0,99] |
+
+Okuma (dürüst sınırlarla):
+- **brute_force:** model aynı ya da daha az yanlış alarmda belirgin biçimde daha çok yakalıyor, güven aralıkları
+  ayrık. Ama CIC'de kurallar ssh.log'suz; labda tablo ters (model 0/4, ssh.log'lu kurallar 4/4), yani bu üstünlük
+  veri setine özgü olabilir.
+- **port_scan:** çok sıkı bütçede (%0,02) kurallar iyi, model kötü; %0,05 ve üstünde model önde, ama 30 pencerede
+  güven aralıkları çakışıyor: "model daha iyi" diyemeyiz, "kuralların kaçırdığı bir kısmı modelin bulduğu" doğru.
+- Kural eğrisi seyrek (skorlar birkaç değer alıyor): kurallar bütçe artınca recall kazanamaz (0,80'de takılır).
+  Eşiklerini (SCAN_MIN_PORTS vb.) değiştirmek ayrı bir deney; burada kurallar sabit.
+- Aynı analiz 172.16.0.1'in "benign" pencereleri dışarıda tekrarlandığında model her bütçede port_scan'de 1,00'a
+  çıkıyor (kural 0,80). Bu pencerelerin etiketi şüpheli (ML-8), bu yüzden bu satırı ana sonuç yapmadık.
+- Sonuç: H1 ("model, kurallardan eşit yanlış alarmda daha iyi") brute_force için CIC'de destekleniyor, port_scan için
+  belirsiz, labda desteklenmiyor. Kısacası "iki yöntem birbirini tamamlıyor" bulgusu duruyor.
