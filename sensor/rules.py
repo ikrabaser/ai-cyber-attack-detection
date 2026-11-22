@@ -179,7 +179,10 @@ class Detector:
         """Model bir saldırı sınıfını yeterince emin görüyorsa (sınıf, olasılık), yoksa None."""
         proba = self.model.predict_proba(row)
         cls = max(proba, key=proba.get)
-        if cls == "normal" or proba[cls] < self.model_threshold:
+        # Brute force = bir KİMLİK DOĞRULAMA servisine (SSH, FTP, RDP...) yüklenmek. Model "çok bağlantı, tek port"
+        # örüntüsünü başka bir porta (örn. DNS 53) da brute force sanabiliyor; orada sinyal sayılmaz.
+        not_auth_brute = cls == "brute_force" and row["top_port"] not in AUTH_PORTS
+        if cls == "normal" or proba[cls] < self.model_threshold or not_auth_brute:
             self.streaks.pop((row["src_ip"], "model"), None)
             return None
         return cls, proba[cls]

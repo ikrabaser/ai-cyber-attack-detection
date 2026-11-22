@@ -201,6 +201,9 @@ Karar kuralları:
 - **Kural susmuş, model bir saldırı sınıfını `--model-threshold` (varsayılan 0,90) üstünde olasılıkla
   görüyorsa** "yalnızca model" tespiti çıkar. Skoru 0,50 (eşikte) ile 0,80 (olasılık 1,0) arasındadır, ısrar
   bonusu dahil en çok 0,85: yani kural kanıtı olmadan **"high" çıkmaz**.
+- Modelin **"brute_force"** demesi yalnızca giriş servisi portlarında (21, 22, 23, 3389, 5900) sinyal sayılır:
+  model "çok bağlantı, tek port" örüntüsünü başka bir porta (örn. DNS 53) da brute force sanabiliyor. Bu gerekçe
+  alan bilgisine dayanır (brute force bir kimlik doğrulama servisine yapılır), eşik taramasıyla bulunmadı.
 - Model yoksa davranış öncekiyle birebir aynıdır.
 
 Neden kuralların yerine geçmiyor? Laboratuvarda brute force'u model yakalayamadı (0/4), ssh.log'lu kurallar 4/4
@@ -210,10 +213,10 @@ pencerelerinde (tek pencere, ısrar bonusu yok, `ssh.log` yok) ölçüm:
 | Eşik | Tarama (30) | Brute force (281) | Normalde yanlış alarm (29.289) |
 | --- | --- | --- | --- |
 | yalnızca kurallar | 24 | 242 | 7 |
-| + model, 0,99 | 27 | 274 | 10 |
-| + model, 0,95 | 29 | 274 | 19 |
-| + model, 0,90 (varsayılan) | 30 | 274 | 20 |
-| + model, 0,50 | 30 | 274 | 35 |
+| + model, 0,99 | 27 | 274 | 9 |
+| + model, 0,95 | 29 | 274 | 18 |
+| + model, 0,90 (varsayılan) | 30 | 274 | 18 |
+| + model, 0,50 | 30 | 274 | 25 |
 
 Dikkat: tarama sınıfı test kümesinde yalnızca 30 pencere; sonuçlar kaba bir işarettir, kesin başarı değildir.
 Modelin yeniden üretimi: `cd ml; python train_xgb.py data/windows_lycos.csv --save data/xgb.json; python export_model.py data/xgb.json ../sensor/models/xgb.json`.

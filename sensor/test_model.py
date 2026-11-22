@@ -121,6 +121,11 @@ class ShippedModelTests(unittest.TestCase):
         self.assertGreater(p["normal"], 0.9)
 
 
+def brute_model():
+    """n_conns >= 50 ise brute_force'a güçlü eğilim."""
+    return toy_model(trees=[split(0, 50.0, 2.0, -2.0), split(0, 50.0, -2.0, -2.0), split(0, 50.0, -3.0, 4.0)])
+
+
 def scan_like(start=1000, src="10.0.0.9", **kw):
     """Kuralların tetiklenmediği ama (toy) modelin saldırı gördüğü satır: çok bağlantı, az port."""
     return row(src=src, start=start, conns=60, ports=3, top_port=80, share=0.4, **kw)
@@ -185,6 +190,21 @@ class DetectorWithModelTests(unittest.TestCase):
         det.feed(scan_like(src="10.0.0.1", start=1000))
         other = det.feed(scan_like(src="10.0.0.2", start=1010))
         self.assertNotIn("ısrar", " ".join(other.reasons))
+
+    def test_model_brute_force_counts_on_auth_ports(self):
+        det = Detector(model=brute_model()).feed(row(conns=60, ports=1, top_port=22, share=0.3))
+        self.assertEqual(det.attack_type, "brute_force")
+        self.assertIn("yalnızca model", det.reasons[0])
+
+    def test_model_brute_force_on_a_non_auth_port_is_ignored(self):
+        # DNS sunucusunun 53. porta çok bağlantısı brute force değildir
+        det = Detector(model=brute_model())
+        self.assertIsNone(det.feed(row(conns=60, ports=1, top_port=53, share=0.3)))
+        self.assertNotIn(("10.0.0.9", "model"), det.streaks)
+
+    def test_port_scan_signal_is_not_limited_to_auth_ports(self):
+        det = Detector(model=toy_model()).feed(scan_like())  # top_port 80
+        self.assertEqual(det.attack_type, "port_scan")
 
     def test_invalid_threshold_is_rejected(self):
         for bad in (0.0, 1.0, 1.5, -0.1):

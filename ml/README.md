@@ -153,7 +153,7 @@ Sensör xgboost kurmadığı için model önce küçük bir JSON'a çevrilir:
 (`test_export_model.py`: toy veride en çok 1e-5 fark; gerçek modelde 3000 pencerede en çok 2e-7). Karar kuralları
 ve ölçüm tablosu için `sensor/README.md`. Kısaca: kural tetiklenirse karar kuralındır, kural susup model >= 0,90
 emin ise skoru en çok 0,85 olan "yalnızca model" tespiti çıkar. Tek pencerede kural + model, taramada 24 → 30 / 30,
-brute force'ta 242 → 274 / 281 yakalar; normalde yanlış alarm 7 → 20 (29.289 pencere).
+brute force'ta 242 → 274 / 281 yakalar; normalde yanlış alarm 7 → 18 (29.289 pencere; modelin brute_force'u yalnızca giriş portlarında sayılır).
 
 ## ML-8: Etiket gürültüsü deneyi (172.16.0.1)
 
