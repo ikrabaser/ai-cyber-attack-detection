@@ -154,3 +154,35 @@ Sensör xgboost kurmadığı için model önce küçük bir JSON'a çevrilir:
 ve ölçüm tablosu için `sensor/README.md`. Kısaca: kural tetiklenirse karar kuralındır, kural susup model >= 0,90
 emin ise skoru en çok 0,85 olan "yalnızca model" tespiti çıkar. Tek pencerede kural + model, taramada 24 → 30 / 30,
 brute force'ta 242 → 274 / 281 yakalar; normalde yanlış alarm 7 → 20 (29.289 pencere).
+
+## ML-8: Etiket gürültüsü deneyi (172.16.0.1)
+
+CIC-IDS2017'de bütün saldırılar tek adresten gelir (172.16.0.1, güvenlik duvarının NAT adresi). Aynı adresten
+"benign" etiketli 103 pencere de var. XGBoost'un yanlış alarmlarının çoğu bu adresten çıktığı için sorduk:
+bunlar gerçekten model hatası mı, yoksa etiket hatası mı?
+
+    python label_noise.py data/windows_lycos.csv
+
+Bu pencerelerin profili normal pencerelerden belirgin biçimde farklı: bağlantıların **hepsi başarısız** olanlar %64
+(diğer normallerde %5,2); hepsi başarısız ve **hiç bayt akmayanlar** %21 (diğerlerinde %0,18); %58'i aynı adresin
+bir saldırı penceresine 5 dakikadan yakın. Yani tarama/saldırı kuyruğuna benziyorlar.
+
+| Yöntem | Değerlendirme | Yanlış alarm | FPR % | Tarama P | Tarama R | macro-F1 |
+| --- | --- | --- | --- | --- | --- | --- |
+| kurallar | tüm test (29.289 normal) | 7 | 0,024 | 0,80 | 0,80 | 0,908 |
+| kurallar | şüpheliler hariç (29.205) | 0 | 0,000 | 1,00 | 0,80 | 0,938 |
+| XGBoost | tüm test | 35 | 0,119 | 0,57 | 1,00 | 0,896 |
+| XGBoost | şüpheliler hariç | 16 | 0,055 | 0,83 | 1,00 | 0,959 |
+| XGBoost (şüpheliler eğitimden de çıkarıldı) | tüm test | 29 | 0,099 | 0,62 | 1,00 | 0,912 |
+| XGBoost (şüpheliler eğitimden de çıkarıldı) | şüpheliler hariç | 10 | 0,034 | 0,97 | 1,00 | 0,984 |
+
+Okuma:
+- Şüpheli pencereler değerlendirmeden çıkınca modelin yanlış alarmı 35 → 16'ya, kuralların 7 → 0'a düşüyor.
+  Yani yanlış alarmın yarısından fazlası (kurallarda hepsi) bu adresten.
+- Şüpheliler eğitimden de çıkarılınca model daha iyi (16 → 10 yanlış alarm): eğitimdeki şüpheli "normal"ler
+  modele "hepsi başarısız birkaç bağlantı = normal" diye yanlış öğretiyor olabilir.
+- Hiçbir şey kanıtlanmadı: pcap olmadan bu pencerelerin saldırı olduğunu söyleyemeyiz, sadece etiketin
+  güvenilmez olduğuna dair güçlü işaret var. Pencereler yeniden etiketlenmedi.
+- Kalan 10-16 yanlış alarm başka kaynaklardan (örneğin DNS sunucusu 192.168.10.3'ün 53. porta 12 bağlantısı
+  "brute_force" görülmüş): bunlar gerçek model hatası.
+- Tarama sınıfı testte yalnızca 30 pencere; precision/recall oynak, kesin sonuç değil.
