@@ -17,7 +17,6 @@ Kurallar
 - Her adım denetim kaydına yazılır (reddedilenler dahil).
 """
 
-import ipaddress
 import logging
 from datetime import timedelta
 
@@ -29,7 +28,7 @@ from django.utils import timezone
 from . import audit, notify, realtime
 from .firewall import get_backend
 from .models import Action
-from .protection import is_protected_target
+from .protection import is_protected_target, same_ip
 
 log = logging.getLogger(__name__)
 
@@ -70,22 +69,6 @@ def _parse_ttl(params):
 
 
 # --- Önerme ---------------------------------------------------------------
-
-
-def _same_ip(a, b):
-    """İki IP metni aynı adres mi? Yazım farkları (büyük/küçük harf, IPv4-eşlemeli IPv6) önemsenmez.
-
-    Biri çözümlenemiyorsa False döner: emin olunamayan eşleşme eşleşme sayılmaz.
-    """
-    def norm(value):
-        try:
-            ip = ipaddress.ip_address(str(value).strip())
-        except ValueError:
-            return None
-        return getattr(ip, "ipv4_mapped", None) or ip
-
-    left, right = norm(a), norm(b)
-    return left is not None and left == right
 
 
 def _active_action(kind, target):
@@ -148,7 +131,7 @@ def propose_action(event, kind, target, params=None, proposed_by="agent"):
     # Eşleşmeyen engel hedefi eylem kaydı oluşturmaz, yalnızca denetim kaydına düşer ve hata döner.
     if kind == Action.Kind.BLOCK_IP:
         source_ip = getattr(event, "source_ip", None)
-        if not _same_ip(target, source_ip):
+        if not same_ip(target, source_ip):
             audit.record(proposed_by, "propose_block_ip", target, "refused",
                          reason="target is not the event source", event_id=event_id,
                          event_source_ip=str(source_ip) if source_ip else None)

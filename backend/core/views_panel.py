@@ -165,7 +165,7 @@ def panel(request):
 @_staff_json
 def snapshot(request):
     events = Event.objects.order_by("-id")[:SNAPSHOT_EVENTS]
-    actions = Action.objects.order_by("-id")[:SNAPSHOT_ACTIONS]
+    actions = Action.objects.select_related("event").order_by("-id")[:SNAPSHOT_ACTIONS]
     steps = AuditLog.objects.order_by("-id")[:SNAPSHOT_STEPS]
     incident_rows = Incident.objects.order_by("-last_seen", "-id")[:SNAPSHOT_INCIDENTS]
     response = JsonResponse(

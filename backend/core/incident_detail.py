@@ -72,7 +72,7 @@ def build_incident(raw_id):
 
     events = list(incident.events.order_by("-created_at", "-id")[:MAX_EVENTS])
     runs = AnalysisRun.objects.filter(incident=incident).order_by("-started_at", "-id")[:MAX_RUNS]
-    actions = list(Action.objects.filter(event__incident=incident).order_by("-id")[:MAX_ACTIONS])
+    actions = list(Action.objects.filter(event__incident=incident).select_related("event").order_by("-id")[:MAX_ACTIONS])
 
     return {
         "incident": realtime.incident_payload(incident),

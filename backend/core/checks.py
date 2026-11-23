@@ -1,8 +1,10 @@
-"""Başlangıç denetimleri: örnek ya da zayıf sırlarla çalışmayı görünür kılar.
+"""Başlangıç denetimleri: örnek ya da zayıf sırlarla, korumasız yapılandırmayla çalışmayı görünür kılar.
 
 `.env.example` içindeki "degistir-beni..." değerleri herkesçe bilinir. Bu değerler (ya da çok kısa sırlar) kullanılıyorsa
 `manage.py runserver`/`check` uyarı verir; DEBUG kapalıyken (SECRETS_STRICT) hata verir. Mesajlar sırrın KENDİSİNİ yazmaz, yalnızca adını.
 """
+
+import ipaddress
 
 from django.conf import settings
 from django.core.checks import Error, Warning, register
@@ -44,4 +46,32 @@ def check_secrets(app_configs, **kwargs):
                 hint=f".env içinde {env_key} için uzun, rastgele bir değer kullan (örn. python -c \"import secrets; print(secrets.token_urlsafe(32))\").",
                 id=f"core.{'E' if strict else 'W'}001",
             ))
+    return issues
+
+
+AUTO_MODES = {"dry_run", "enforce"}
+
+
+@register()
+def check_protected_ips(app_configs, **kwargs):
+    """Korumalı IP listesi: geçersiz girdi her öneriyi bozar, boş liste otomatik kademede tehlikelidir."""
+    issues = []
+    entries = list(getattr(settings, "PROTECTED_IPS", None) or [])
+    for raw in entries:
+        try:
+            ipaddress.ip_network(str(raw), strict=False)
+        except ValueError:
+            issues.append(Error(
+                f"PROTECTED_IPS içinde geçersiz değer: {raw!r}.",
+                hint="Her girdi bir IP ya da CIDR olmalı (örn. 192.168.56.1 veya 10.77.0.0/24).",
+                id="core.E003",
+            ))
+    mode = getattr(settings, "AUTO_REMEDIATION_MODE", "advise")
+    if not entries and mode in AUTO_MODES:
+        strict = getattr(settings, "SECRETS_STRICT", True)
+        issues.append((Error if strict else Warning)(
+            f"AUTO_REMEDIATION_MODE={mode} iken PROTECTED_IPS boş: ağ geçidi, DNS ve sensör engellenebilir.",
+            hint=".env içinde PROTECTED_IPS'e bu makinelerin adreslerini yaz (saldırı testi yaptığın saldırgan VM'inkini yazma).",
+            id=f"core.{'E' if strict else 'W'}002",
+        ))
     return issues

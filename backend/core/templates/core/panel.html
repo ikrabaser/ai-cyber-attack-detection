@@ -73,6 +73,7 @@ section.card > h2 small { color: var(--muted); font-weight: 400; }
 .pcard { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; padding: 10px 12px; }
 .pcard .t { font-weight: 600; }
 .pcard .m { color: var(--muted); font-size: 12px; margin: 2px 0 8px; }
+.pcard .m.alert { color: var(--warn); font-weight: 600; }
 .pcard .btns { display: flex; gap: 8px; }
 
 .table-wrap { overflow-x: auto; }
@@ -829,6 +830,24 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     box.querySelector('.n').textContent = String(n);
   }
 
+  // Onay kartındaki "kimlik ve neden" satırları: yalnızca yapılandırılmış alanlar (saldırı türü, risk, kaynak IP).
+  function reasonLines(a) {
+    const lines = [];
+    const why = [];
+    if (a.attack_type) why.push(a.attack_type);
+    if (a.risk_score != null) {
+      const lv = LEVEL[a.risk_level];
+      why.push(`risk ${Number(a.risk_score).toFixed(2).replace('.', ',')}${lv ? ` (${lv[0]})` : ''}`);
+    }
+    if (why.length) lines.push({ text: `Neden: ${why.join(' · ')}`, alert: false });
+    const who = [];
+    if (a.target_is_source === true) who.push('hedef olayın kaynak adresi');
+    if (a.proposed_by) who.push(`öneren: ${a.proposed_by}`);
+    if (who.length) lines.push({ text: who.join(' · '), alert: false });
+    if (a.target_is_source === false) lines.push({ text: `DİKKAT: hedef olayın kaynağından (${a.event_source_ip || '?'}) farklı`, alert: true });
+    return lines;
+  }
+
   function render() {
     const acts = sortedDesc(actions);
     const filterOn = filterActive();
@@ -853,9 +872,11 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
         const meta = el('div', { cls: 'm' });
         meta.append(`Olay #${a.event_id ?? '—'} · kalan `, timer(a.approval_deadline));
         if (a.ttl_seconds) meta.append(` · engel süresi ${Math.round(a.ttl_seconds / 60)} dk`);
+        const reasons = reasonLines(a).map((l) => el('div', { cls: l.alert ? 'm alert' : 'm', text: l.text }));
         list.append(el('div', { cls: 'pcard' },
           el('div', { cls: 't' }, document.createTextNode(`${KIND[a.kind] || a.kind}: `), a.kind === 'block_ip' ? ipLink(a.target) : el('span', { cls: 'mono', text: a.target })),
           meta,
+          ...reasons,
           el('div', { cls: 'btns' },
             actionButton('Onayla', 'approve', a.id, METHODS.approve, risky),
             actionButton('Reddet', 'reject', a.id, METHODS.reject, false))));

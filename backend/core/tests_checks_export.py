@@ -18,6 +18,35 @@ User = get_user_model()
 STRONG = "x7Qm2vL9pR4tZ8wK1nB6cD3fG5hJ0sAa"
 
 
+class ProtectedIpChecksTests(SimpleTestCase):
+    def issues(self, **overrides):
+        with override_settings(**overrides):
+            return checks.check_protected_ips(None)
+
+    def test_filled_list_is_clean_in_every_mode(self):
+        for mode in ("advise", "dry_run", "enforce"):
+            self.assertEqual(self.issues(PROTECTED_IPS=["192.168.56.1", "10.77.0.0/24"], AUTO_REMEDIATION_MODE=mode), [], mode)
+
+    def test_empty_list_is_not_flagged_while_everything_needs_approval(self):
+        self.assertEqual(self.issues(PROTECTED_IPS=[], AUTO_REMEDIATION_MODE="advise"), [])
+
+    @override_settings(SECRETS_STRICT=False)
+    def test_empty_list_warns_in_automatic_modes_when_not_strict(self):
+        for mode in ("dry_run", "enforce"):
+            out = self.issues(PROTECTED_IPS=[], AUTO_REMEDIATION_MODE=mode)
+            self.assertEqual([(i.id, i.level) for i in out], [("core.W002", 30)], mode)
+
+    @override_settings(SECRETS_STRICT=True)
+    def test_empty_list_is_an_error_in_automatic_modes_when_strict(self):
+        out = self.issues(PROTECTED_IPS=[], AUTO_REMEDIATION_MODE="enforce")
+        self.assertEqual([(i.id, i.level) for i in out], [("core.E002", 40)])
+
+    def test_invalid_entry_is_always_an_error(self):
+        out = self.issues(PROTECTED_IPS=["192.168.56.1", "192.168.56.999", "gateway"], AUTO_REMEDIATION_MODE="advise")
+        self.assertEqual([i.id for i in out], ["core.E003", "core.E003"])
+        self.assertIn("192.168.56.999", out[0].msg)
+
+
 class SecretChecksTests(SimpleTestCase):
     def issues(self, **overrides):
         base = dict(SENSOR_API_TOKEN=STRONG, RT_PROXY_SECRET=STRONG, RT_API_KEY=STRONG, SECRET_KEY=STRONG)

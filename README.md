@@ -42,6 +42,11 @@ Saldırı testleri yalnızca **kendi izole lab ağında** yapılır.
 
 - **Korumalı IP/host listesi** (`PROTECTED_IPS`, `PROTECTED_HOSTS`): hem önerirken hem uygularken
   kontrol edilir, ayrıştırılamayan IP korumalı sayılır, reddedilen denemeler denetim kaydına yazılır.
+  Başlangıçta `manage.py check` geçersiz girdiyi hata sayar; `dry_run`/`enforce` kademesinde liste
+  boşsa uyarı verir (DEBUG kapalıyken hata).
+- **Engel hedefi = olayın kaynak IP'si:** `block_ip` yalnızca olayın `source_ip` adresine önerilebilir.
+  Başka bir adres (log metnine gömülmüş bir IP, NAT arkasındaki komşu) eylem kaydı oluşturmadan reddedilir
+  ve denetim kaydına yazılır.
 - **Kademe** (`AUTO_REMEDIATION_MODE`): `advise` (hepsi onay bekler) → `dry_run` → `enforce`.
   Host izolasyonu ve yapılandırma düzeltmesi her kademede insan onayı ister.
 - **Geri alınabilirlik:** her IP engeli TTL'li; süre dolunca `expire_actions` (dakikada bir) kaldırır.
@@ -69,7 +74,9 @@ docker compose exec backend python manage.py createsuperuser   # is_staff = pane
 Tek sayfa, Django'dan servis edilir. Açılınca son olaylar/eylemler yüklenir, sonrası Centrifugo
 üzerinden canlı akar (yenileme gerekmez).
 
-- **Onay bekleyen eylemler** kartlarında Onayla / Reddet. Host izolasyonu ve yapılandırma düzeltmesi
+- **Onay bekleyen eylemler** kartlarında Onayla / Reddet. Kartta hedefin kimliği ve nedeni yazar
+  (saldırı türü, risk, hedefin olayın kaynak adresi olup olmadığı, öneren); bu satırlar yalnızca
+  yapılandırılmış alanlardan gelir, olayın serbest metni (özet, log) kartta gösterilmez. Host izolasyonu ve yapılandırma düzeltmesi
   için onay iki tıklamalı ("Emin misin?"). Uygulanmış engel ve izolasyonlarda **Geri al**.
 - Butonlar `ids:approve_action`, `ids:reject_action`, `ids:rollback_action` RPC'lerini çağırır; karar
   yine doğrulanmış `is_staff` oturumundan ve `core.actions` politika katmanından geçer.

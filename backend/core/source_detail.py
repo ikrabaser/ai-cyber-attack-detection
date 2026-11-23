@@ -52,7 +52,7 @@ def build_source(raw_ip):
     timeline = list(events.order_by("-created_at", "-id")[:TIMELINE_EVENTS])[::-1]
 
     actions = (
-        Action.objects.filter(Q(target=ip) | Q(event__source_ip=ip)).distinct().order_by("-id")[:MAX_ACTIONS]
+        Action.objects.filter(Q(target=ip) | Q(event__source_ip=ip)).select_related("event").distinct().order_by("-id")[:MAX_ACTIONS]
     )
 
     return {

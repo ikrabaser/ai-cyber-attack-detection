@@ -9,6 +9,8 @@ import logging
 import requests
 from django.conf import settings
 
+from .protection import same_ip
+
 log = logging.getLogger(__name__)
 
 CHANNEL_FEED = "events:feed"
@@ -67,7 +69,9 @@ def event_payload(event):
 
 
 def action_payload(action):
-    return {
+    """Panelin onay kartı için eylem özeti. Kimlik ve neden yalnızca yapılandırılmış alanlardan gelir
+    (olayın saldırı türü, risk, kaynak IP); serbest metin (özet, log alıntısı) kartta gösterilmez."""
+    payload = {
         "type": "action",
         "id": action.pk,
         "event_id": action.event_id,
@@ -82,7 +86,19 @@ def action_payload(action):
         "effect_expires_at": action.effect_expires_at.isoformat()
         if action.effect_expires_at
         else None,
+        "proposed_by": str(action.proposed_by or "")[:64],
     }
+    event = action.event
+    if event is not None:
+        payload["attack_type"] = str(event.attack_type or "")[:64]
+        payload["risk_score"] = event.risk_score
+        payload["risk_level"] = event.risk_level
+        payload["event_source_ip"] = event.source_ip
+        # Yalnızca IP engelinde anlamlı: engellenen adres olayın kaynağı mı?
+        payload["target_is_source"] = (
+            same_ip(action.target, event.source_ip) if action.kind == "block_ip" else None
+        )
+    return payload
 
 
 def _int_or_none(value):

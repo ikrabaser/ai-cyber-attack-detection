@@ -35,6 +35,22 @@ def is_protected_ip(ip) -> bool:
     return any(addr in net for net in _protected_networks())
 
 
+def same_ip(a, b) -> bool:
+    """İki IP metni aynı adres mi? Yazım farkları (büyük/küçük harf, IPv4-eşlemeli IPv6) önemsenmez.
+
+    Biri çözümlenemiyorsa False döner: emin olunamayan eşleşme eşleşme sayılmaz.
+    """
+    def norm(value):
+        try:
+            ip = ipaddress.ip_address(str(value).strip())
+        except ValueError:
+            return None
+        return getattr(ip, "ipv4_mapped", None) or ip
+
+    left, right = norm(a), norm(b)
+    return left is not None and left == right
+
+
 def is_protected_target(target) -> bool:
     """IP ya da host adı olabilen bir hedef için kontrol."""
     value = str(target).strip()
