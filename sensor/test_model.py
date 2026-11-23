@@ -217,6 +217,52 @@ class DetectorWithModelTests(unittest.TestCase):
         self.assertEqual(len(detect_rows(rows, model=toy_model())), 2)
 
 
+class DetectionSourceTests(unittest.TestCase):
+    """Kararın kaynağı (rules / rules+model / model) ve modelin görüşü Detection'da ve olay gövdesinde durur."""
+
+    def test_rules_only_detection_has_no_model_fields(self):
+        det = Detector().feed(row(conns=60, ports=40, fail=1.0, share=0.1))
+        self.assertEqual((det.detected_by, det.model_label, det.model_score), ("rules", None, None))
+
+    def test_model_only_detection(self):
+        det = Detector(model=toy_model()).feed(scan_like())
+        self.assertEqual(det.detected_by, "model")
+        self.assertEqual(det.model_label, "port_scan")
+        self.assertGreater(det.model_score, 0.9)
+
+    def test_rules_and_model_agreeing(self):
+        det = Detector(model=toy_model()).feed(row(conns=60, ports=40, fail=1.0, share=0.1))
+        self.assertEqual(det.detected_by, "rules+model")
+        self.assertEqual(det.model_label, "port_scan")
+
+    def test_model_disagreement_keeps_rules_as_the_source(self):
+        det = Detector(model=toy_model()).feed(row(conns=60, ports=2, top_port=22, share=1.0))
+        self.assertEqual(det.attack_type, "brute_force")
+        self.assertEqual(det.detected_by, "rules")
+        self.assertEqual(det.model_label, "port_scan")
+
+    def test_model_saying_normal_is_still_recorded_next_to_a_rule_detection(self):
+        # kural tetikler (çok port), toy model n_conns < 50 olduğu için "normal" der
+        det = Detector(model=toy_model()).feed(row(conns=20, ports=40, fail=1.0, share=0.1))
+        self.assertEqual(det.detected_by, "rules")
+        self.assertEqual(det.model_label, "normal")
+        self.assertGreater(det.model_score, 0.9)
+
+    def test_event_payload_carries_source_and_model_opinion(self):
+        from client import build_event
+        body = build_event(Detector(model=toy_model()).feed(scan_like()))
+        self.assertEqual(body["features"]["detected_by"], "model")
+        self.assertEqual(body["xgb_label"], "port_scan")
+        self.assertGreater(body["xgb_score"], 0.9)
+
+    def test_event_payload_without_model_has_no_xgb_fields(self):
+        from client import build_event
+        body = build_event(Detector().feed(row(conns=60, ports=40, fail=1.0, share=0.1)))
+        self.assertEqual(body["features"]["detected_by"], "rules")
+        self.assertNotIn("xgb_label", body)
+        self.assertNotIn("xgb_score", body)
+
+
 class DetectCommandModelTests(unittest.TestCase):
     def run_main(self, *argv):
         out, err = io.StringIO(), io.StringIO()

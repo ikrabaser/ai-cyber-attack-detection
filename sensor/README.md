@@ -206,6 +206,11 @@ Karar kuralları:
   alan bilgisine dayanır (brute force bir kimlik doğrulama servisine yapılır), eşik taramasıyla bulunmadı.
 - Model yoksa davranış öncekiyle birebir aynıdır.
 
+Kararın kaynağı panele de gider: olay gövdesinde `features.detected_by` (`rules`, `rules+model`, `model`) ve modelin
+kendi görüşü (`xgb_label`, `xgb_score`) bulunur. Panelde tablodaki risk rozetinin yanında "Yalnızca model" ya da
+"Kural + model" rozeti, olay çekmecesinde "Modelin görüşü" satırı görünür. Sensör `--model` olmadan çalışıyorsa
+rozet çıkmaz. Denemek için: `docker compose exec backend python manage.py emit_test_event --ip 203.0.113.7 --detected-by model`.
+
 Neden kuralların yerine geçmiyor? Laboratuvarda brute force'u model yakalayamadı (0/4), ssh.log'lu kurallar 4/4
 yakaladı. Model ise kuralların kaçırdığı bazı taramaları/brute force pencerelerini yakalıyor. CIC test
 pencerelerinde (tek pencere, ısrar bonusu yok, `ssh.log` yok) ölçüm:

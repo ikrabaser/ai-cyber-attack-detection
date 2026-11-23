@@ -18,7 +18,8 @@ def build_event(det):
     features["window_start"] = det.window_start
     features["top_port"] = det.row["top_port"]
     features["ssh_failed_auth"] = det.row.get("ssh_failed_auth", 0)
-    return {
+    features["detected_by"] = det.detected_by
+    payload = {
         "source_ip": det.src_ip,
         "target_host": det.row["top_dst_host"],
         "attack_type": det.attack_type,
@@ -26,6 +27,10 @@ def build_event(det):
         "summary": "; ".join(det.reasons),
         "features": features,
     }
+    if det.model_label is not None:  # model kullanıldıysa görüşünü backend'in xgb_* alanlarına yaz
+        payload["xgb_label"] = det.model_label
+        payload["xgb_score"] = round(det.model_score, 4)
+    return payload
 
 
 def send_event(url, token, payload, timeout=5):

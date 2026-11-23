@@ -90,6 +90,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 .chip.ok { --tone: var(--ok); } .chip.warn { --tone: var(--warn); }
 .chip.bad { --tone: var(--bad); } .chip.info { --tone: var(--info); }
 .chip.muted { --tone: var(--muted); }
+.chip + .chip { margin-left: 6px; }
 
 .risk { display: inline-flex; align-items: center; gap: 8px; }
 .bar { width: 64px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; display: inline-block; }
@@ -625,6 +626,18 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     const [label, tone] = pair || [fallback || '?', 'muted'];
     return el('span', { cls: 'chip ' + tone, text: label });
   };
+  // Kararı kim verdi? Sensör --model ile çalışıyorsa olayın features.detected_by alanı doludur (eski olaylarda boş).
+  const DETECTED_BY = {
+    'model': ['Yalnızca model', 'warn', 'Kurallar tetiklenmedi; model bir saldırı sınıfını yüksek olasılıkla gördü. Skoru en çok 0,85, yüksek risk çıkmaz.'],
+    'rules+model': ['Kural + model', 'ok', 'Kural tetiklendi ve model de aynı saldırı türünü gördü.'],
+  };
+  const sourceChip = (e) => {
+    const t = DETECTED_BY[e.detected_by];
+    if (!t) return null;
+    const c = chip([t[0], t[1]]);
+    c.title = t[2];
+    return c;
+  };
   const fmtTime = (iso) => {
     const d = new Date(iso);
     return isNaN(d) ? '' : d.toLocaleTimeString('tr-TR');
@@ -862,7 +875,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
         el('td', { text: e.target_host || '—' }),
         el('td', { text: e.attack_type }),
         el('td', {}, el('span', { cls: 'risk' }, el('span', { cls: 'bar ' + tone }, fill), el('b', { cls: 'mono', text: risk.toFixed(2) }))),
-        el('td', {}, chip(lv, e.risk_level)),
+        el('td', {}, chip(lv, e.risk_level), sourceChip(e)),
         el('td', { text: EVSTATUS[e.status] || e.status }),
         el('td', { cls: 'wrap-cell', text: e.summary || '', title: e.summary || '' }));
     }));
@@ -1031,7 +1044,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
         el('td', { text: fmtDateTime(e.created_at) }),
         el('td', { text: e.attack_type }),
         el('td', { cls: 'mono', text: Math.max(0, Math.min(1, Number(e.risk_score) || 0)).toFixed(2) }),
-        el('td', {}, chip(lv, e.risk_level)),
+        el('td', {}, chip(lv, e.risk_level), sourceChip(e)),
         el('td', { text: EVSTATUS[e.status] || e.status }),
         el('td', { cls: 'wrap-cell', text: e.summary || '', title: e.summary || '' }));
     }));
@@ -1770,7 +1783,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
       el('td', { text: fmtDateTime(e.created_at) }),
       el('td', { text: e.attack_type }),
       el('td', { cls: 'mono', text: Math.max(0, Math.min(1, Number(e.risk_score) || 0)).toFixed(2) }),
-      el('td', {}, chip(LEVEL[e.risk_level], e.risk_level)),
+      el('td', {}, chip(LEVEL[e.risk_level], e.risk_level), sourceChip(e)),
       el('td', { cls: 'wrap-cell', text: e.summary || '', title: e.summary || '' }))));
 
     $('incd-actions-empty').hidden = d.actions.length > 0;
@@ -2066,8 +2079,8 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     const demo=Number(socSelectedEvent.id)<0;
     const e=demo?socSelectedEvent:(events.get(socSelectedEvent.id)||socSelectedEvent);
     $('soc-event-title').textContent=e.attack_type||'Olay';$('soc-event-id').textContent=demo?'DEMO / ÖRNEK BAĞLANTI':`OLAY #${e.id}`;
-    $('soc-event-tags').replaceChildren(chip(LEVEL[e.risk_level],e.risk_level),chip([demo?'Demo':(EVSTATUS[e.status]||e.status||'Bilinmiyor'),'muted']));
-    const fields=[['Kaynak',socName(e.source_ip)],['Hedef',socName(e.target_host)],['Zaman',demo?'Kurgusal örnek':fmtDateTime(e.created_at)],['Risk skoru',Number.isFinite(Number(e.risk_score))?Number(e.risk_score).toFixed(2):'—'],['Incident',e.incident_id?'#'+e.incident_id:'—']];
+    $('soc-event-tags').replaceChildren(...[chip(LEVEL[e.risk_level],e.risk_level),chip([demo?'Demo':(EVSTATUS[e.status]||e.status||'Bilinmiyor'),'muted']),demo?null:sourceChip(e)].filter(Boolean));
+    const fields=[['Kaynak',socName(e.source_ip)],['Hedef',socName(e.target_host)],['Zaman',demo?'Kurgusal örnek':fmtDateTime(e.created_at)],['Risk skoru',Number.isFinite(Number(e.risk_score))?Number(e.risk_score).toFixed(2):'—'],['Incident',e.incident_id?'#'+e.incident_id:'—'],...(e.detected_by&&e.xgb_label?[['Modelin görüşü',`${e.xgb_label} (${Number(e.xgb_score).toFixed(2)})`]]:[])];
     $('soc-event-fields').replaceChildren(...fields.flatMap(([k,v])=>[el('dt',{text:k}),el('dd',{text:v})]));
     $('soc-event-summary').textContent=demo?'Bu bağlantı, animasyonu göstermek için oluşturulmuş örnektir. Gerçek bir saldırı ya da analist kararı değildir.':(e.summary||'Bu olay için henüz özet bulunmuyor.');
     const actions=[];

@@ -41,7 +41,13 @@ def publish(channel, data):
         return False
 
 
+# Sensörün --model ile işaretlediği karar kaynakları. features sensör kontrollüdür; bilinmeyen değer panele geçmez.
+DETECTED_BY = ("rules", "rules+model", "model")
+
+
 def event_payload(event):
+    features = event.features if isinstance(event.features, dict) else {}
+    detected_by = features.get("detected_by")
     return {
         "type": "event",
         "id": event.pk,
@@ -54,6 +60,9 @@ def event_payload(event):
         "status": event.status,
         "summary": event.summary[:500],
         "incident_id": event.incident_id,
+        "detected_by": detected_by if detected_by in DETECTED_BY else "",
+        "xgb_label": event.xgb_label,
+        "xgb_score": event.xgb_score,
     }
 
 

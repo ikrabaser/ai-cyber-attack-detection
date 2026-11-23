@@ -82,6 +82,11 @@ class Detection:
     risk_score: float
     reasons: list = field(default_factory=list)
     row: dict = field(default_factory=dict)
+    # Model kullanıldıysa: modelin o pencereye verdiği sınıf/olasılık ve kararın kaynağı
+    # ("rules" | "rules+model" | "model"). Model yoksa model_label/model_score None kalır, kaynak "rules"dır.
+    model_label: str = None
+    model_score: float = None
+    detected_by: str = "rules"
 
     @property
     def level(self):
@@ -175,17 +180,15 @@ class Detector:
                 best = Detection(row["src_ip"], row["window_start"], name, score, reasons, row)
         return best
 
-    def _model_signal(self, row):
-        """Model bir saldırı sınıfını yeterince emin görüyorsa (sınıf, olasılık), yoksa None."""
-        proba = self.model.predict_proba(row)
-        cls = max(proba, key=proba.get)
+    def _is_signal(self, row, cls, p):
+        """Modelin görüşü "saldırı sinyali" sayılır mı? Sayılmazsa model ısrar zinciri de bozulur."""
         # Brute force = bir KİMLİK DOĞRULAMA servisine (SSH, FTP, RDP...) yüklenmek. Model "çok bağlantı, tek port"
         # örüntüsünü başka bir porta (örn. DNS 53) da brute force sanabiliyor; orada sinyal sayılmaz.
         not_auth_brute = cls == "brute_force" and row["top_port"] not in AUTH_PORTS
-        if cls == "normal" or proba[cls] < self.model_threshold or not_auth_brute:
+        if cls == "normal" or p < self.model_threshold or not_auth_brute:
             self.streaks.pop((row["src_ip"], "model"), None)
-            return None
-        return cls, proba[cls]
+            return False
+        return True
 
     def feed(self, row):
         """Bir satır -> o (kaynak, pencere) için en yüksek skorlu tespit, yoksa None.
@@ -198,23 +201,30 @@ class Detector:
         if self.model is None:
             return best
 
-        signal = self._model_signal(row)
-        if signal is None:
-            return best
-        cls, p = signal
-        count, bonus = self._streak((row["src_ip"], "model"), row["window_start"])
+        proba = self.model.predict_proba(row)
+        cls = max(proba, key=proba.get)
+        p = proba[cls]
+        signal = self._is_signal(row, cls, p)
+        count, bonus = self._streak((row["src_ip"], "model"), row["window_start"]) if signal else (0, 0.0)
         if best is not None:
-            note = (f"model de aynı fikirde ({cls}, olasılık {p:.2f})" if best.attack_type == cls
-                    else f"model farklı tür öneriyor: {cls} (olasılık {p:.2f})")
-            best.reasons.append(note)
+            best.model_label, best.model_score = cls, p
+            if signal:
+                agrees = best.attack_type == cls
+                best.reasons.append(f"model de aynı fikirde ({cls}, olasılık {p:.2f})" if agrees
+                                    else f"model farklı tür öneriyor: {cls} (olasılık {p:.2f})")
+                if agrees:
+                    best.detected_by = "rules+model"
             return best
+        if not signal:
+            return None
 
         base = MODEL_BASE_SCORE + MODEL_SCORE_SPAN * (p - self.model_threshold) / (1.0 - self.model_threshold)
         score = min(MODEL_ONLY_MAX, base + bonus)
         reasons = [f"yalnızca model: {cls} olasılığı {p:.2f}, kurallar tetiklenmedi"]
         if count > 1:
             reasons.append(f"model {count}. pencerede ısrar ediyor (+{bonus:.2f})")
-        return Detection(row["src_ip"], row["window_start"], cls, score, reasons, row)
+        return Detection(row["src_ip"], row["window_start"], cls, score, reasons, row,
+                         model_label=cls, model_score=p, detected_by="model")
 
 
 def detect(rows, window=WINDOW_SECONDS, model=None, model_threshold=MODEL_MIN_PROB):
