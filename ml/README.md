@@ -227,3 +227,17 @@ Okuma (dürüst sınırlarla):
   çıkıyor (kural 0,80). Bu pencerelerin etiketi şüpheli (ML-8), bu yüzden bu satırı ana sonuç yapmadık.
 - Sonuç: H1 ("model, kurallardan eşit yanlış alarmda daha iyi") brute_force için CIC'de destekleniyor, port_scan için
   belirsiz, labda desteklenmiyor. Kısacası "iki yöntem birbirini tamamlıyor" bulgusu duruyor.
+
+## ML-12: H1 ve etiket gürültüsünü panele taşımak
+
+ML-8 ve ML-9'un sayıları artık "Model değerlendirmesi" sekmesinde de var: iki H1 tablosu (normallerin hepsiyle ve
+172.16.0.1'in şüpheli pencereleri hariç) ve etiket gürültüsü tablosu. Bölümler raporda yoksa panel gizler.
+
+Mevcut `ml_report.json`'un geri kalanına (XGBoost, kurallar, autoencoder, lab) dokunmadan yalnızca bu bölümleri
+üretmek / yenilemek için:
+
+    python export_report.py data/windows_lycos.csv --out ../backend/core/ml_report.json --extras-only
+
+Sayılar kullanılan xgboost sürümüne bağlıdır (kendi makinen ile başka bir ortam küçük farklar verebilir), bu
+yüzden rapora `xgboost_version` da yazılır ve panel notunda görünür. README'deki ML-8 ve ML-9 tabloları senin
+makinendeki sayılardır; raporu aynı makinede üretirsen panelle README tutarlı olur.

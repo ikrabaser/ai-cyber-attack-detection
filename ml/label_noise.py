@@ -96,6 +96,16 @@ def format_comparison(result):
     return "\n".join(lines)
 
 
+def panel_summary(profile_result, comparison):
+    """Panelin gösterdiği özet: şüpheli pencerelerin profili ve yöntem/değerlendirme başına sayılar."""
+    return {
+        "suspect_ip": SUSPECT_IP,
+        "near_attack_seconds": NEAR_ATTACK_SECONDS,
+        "profile": dict(profile_result),
+        "rows": [dict(method=name, evaluation=label, **s) for (name, label), s in comparison.items()],
+    }
+
+
 def main(path):
     from train_xgb import predict, train
 

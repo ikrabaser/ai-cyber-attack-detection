@@ -72,6 +72,18 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(len(text.splitlines()), 1 + 6)
         self.assertIn("kurallar", text)
 
+    def test_panel_summary_flattens_the_comparison_and_keeps_the_profile(self):
+        import json
+        out = ln.compare(self.rows, lambda rs: None, lambda m, rs: ["normal"] * len(rs))
+        summary = ln.panel_summary(ln.profile(self.rows), out)
+        self.assertEqual(summary["suspect_ip"], ln.SUSPECT_IP)
+        self.assertEqual(summary["profile"]["suspects"], 2)
+        self.assertEqual(len(summary["rows"]), 6)
+        first = summary["rows"][0]
+        for key in ("method", "evaluation", "normals", "false_alarms", "fpr", "ps_precision", "ps_recall", "macro_f1"):
+            self.assertIn(key, first)
+        json.dumps(summary)
+
 
 if __name__ == "__main__":
     unittest.main()

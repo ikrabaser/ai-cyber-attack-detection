@@ -165,6 +165,8 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 .cm.heat td { font-variant-numeric: tabular-nums; }
 #ml-ae-table th, #ml-ae-table td { padding: 8px 9px; }
 #ml-ae-table th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
+#ml-h1-table th, #ml-h1-table td, #ml-h1-clean-table th, #ml-h1-clean-table td, #ml-noise-table th, #ml-noise-table td { padding: 8px 9px; }
+#ml-h1-table th, #ml-h1-clean-table th, #ml-noise-table th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
 
 .flow { list-style: none; margin: 0; padding: 4px 0; max-height: 360px; overflow-y: auto; }
 .flow li { display: grid; grid-template-columns: 84px 92px 1fr; gap: 4px 12px; align-items: baseline; padding: 6px 14px; border-bottom: 1px solid var(--line); }
@@ -418,6 +420,28 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
         <figure class="chartbox">
           <figcaption>Doğru sınıfı bulunan pencere sayısı / ölçülen pencere</figcaption>
           <div class="table-wrap"><table id="ml-lab-table" aria-label="Laboratuvarda yöntem ve sınıfa göre doğru bulunan pencere sayısı"></table></div>
+        </figure>
+      </div>
+      <h3 class="sub" id="ml-h1-title">Eşit yanlış alarmda karşılaştırma (H1)</h3>
+      <p class="soc-intro" id="ml-h1-note"></p>
+      <div class="charts one">
+        <figure class="chartbox">
+          <figcaption>Yakalanan saldırı oranı [%95 güven aralığı], normal pencerelerin hepsiyle</figcaption>
+          <div class="table-wrap"><table id="ml-h1-table" aria-label="Eşit yanlış alarm oranında kurallar ve XGBoost'un yakalama oranı"></table></div>
+        </figure>
+      </div>
+      <div class="charts one">
+        <figure class="chartbox">
+          <figcaption>Aynı karşılaştırma, saldırgan adresinden gelen “benign” etiketli şüpheli pencereler hariç</figcaption>
+          <div class="table-wrap"><table id="ml-h1-clean-table" aria-label="Şüpheli pencereler hariç eşit yanlış alarm karşılaştırması"></table></div>
+        </figure>
+      </div>
+      <h3 class="sub" id="ml-noise-title">Etiket gürültüsü: saldırgan adresinden gelen “benign” pencereler</h3>
+      <p class="soc-intro" id="ml-noise-note"></p>
+      <div class="charts one">
+        <figure class="chartbox">
+          <figcaption>Yöntem ve değerlendirme kümesine göre yanlış alarmlar</figcaption>
+          <div class="table-wrap"><table id="ml-noise-table" aria-label="Şüpheli pencereler dahil ve hariç sonuçlar"></table></div>
         </figure>
       </div>
       <h3 class="sub">Okurken dikkat</h3>
@@ -1441,11 +1465,61 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     }
   }
 
+  const rangeText = (m) => `${f2(m.recall)} [${f2(m.lo)}–${f2(m.hi)}]`;
+
+  function renderH1Table(id, rows, c) {
+    const t = $(id);
+    t.replaceChildren();
+    t.classList.add('cm', 'heat');
+    const head = el('tr');
+    for (const h of ['Sınıf', 'Hedef yanlış alarm', 'Kurallar (gerçekleşen)', 'XGBoost (gerçekleşen)', 'Saldırı penceresi']) head.appendChild(el('th', { text: h }));
+    t.appendChild(el('thead', null, head));
+    const body = el('tbody');
+    for (const r of rows) {
+      const tr = el('tr');
+      tr.appendChild(el('td', { text: ML_CLASS[r.cls] || r.cls }));
+      tr.appendChild(el('td', { text: `%${(r.target * 100).toFixed(2)}` }));
+      for (const m of [r.rules, r.model]) {
+        const td = el('td', { text: `${rangeText(m)} (%${(m.fpr * 100).toFixed(3)})` });
+        heat(td, m.recall, c.info);
+        tr.appendChild(td);
+      }
+      tr.appendChild(el('td', { text: r.n_pos.toLocaleString('tr-TR') }));
+      body.appendChild(tr);
+    }
+    t.appendChild(body);
+  }
+
+  function renderMlExtras(c) {
+    const d = mlData;
+    if (d.equal_fpr) {
+      renderH1Table('ml-h1-table', d.equal_fpr.variants.all, c);
+      renderH1Table('ml-h1-clean-table', d.equal_fpr.variants.clean, c);
+    }
+    if (d.label_noise) {
+      const t = $('ml-noise-table');
+      t.replaceChildren();
+      t.classList.add('cm');
+      const head = el('tr');
+      for (const h of ['Yöntem', 'Değerlendirme', 'Normal pencere', 'Yanlış alarm', 'Yanlış alarm oranı', 'Tarama kesinliği', 'Tarama duyarlılığı', 'Makro-F1']) head.appendChild(el('th', { text: h }));
+      t.appendChild(el('thead', null, head));
+      const body = el('tbody');
+      for (const r of d.label_noise.rows) {
+        const tr = el('tr');
+        for (const v of [r.method, r.evaluation, r.normals.toLocaleString('tr-TR'), r.false_alarms.toLocaleString('tr-TR'),
+          `%${(r.fpr * 100).toFixed(3)}`, f2(r.ps_precision), f2(r.ps_recall), f3(r.macro_f1)]) tr.appendChild(el('td', { text: v }));
+        body.appendChild(tr);
+      }
+      t.appendChild(body);
+    }
+  }
+
   function renderMl() {
     const d = mlData;
     if (!d || typeof Chart === 'undefined') return;
     const c = palette();
     renderMlTables(c);
+    renderMlExtras(c);
     const base = { responsive: true, maintainAspectRatio: false, animation: false };
     const classes = d.classes;
     const labels = classes.map((k) => ML_CLASS[k] || k);
@@ -1551,6 +1625,21 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
       $('ml-lab-note').textContent = `${l.date} tarihli temiz koşu: ${l.runs} koşu, ${l.windows} tam pencere (${l.unmeasured_boundary} yarım pencere ölçüme alınmadı). `
         + 'Port tarama CIC’ten kendi ağımıza aktarıldı. Kaba kuvveti yalnızca ssh.log kullanan kural gördü: Hydra bir SSH bağlantısında birkaç parola dener, conn.log’ta bu normal bir oturumdan ayırt edilemez. Örnek küçüktür, sonuç bir işarettir.';
     }
+    if (d.equal_fpr) {
+      $('ml-h1-note').textContent = 'Her yöntem kendi eşiğinde karşılaştırılınca daha çok alarm veren daha çok saldırı yakalar; bu adil değil. Burada normal pencerelerin yalnızca belirtilen oranı yanlış alarm versin diye eşik ayarlanır ve o orandaki yakalama oranına bakılır. '
+        + 'Kuralların skoru birkaç değer alır; hedef orana ulaşılamıyorsa kuralın o orandaki en iyi noktası gösterilir (gerçekleşen oran parantezde). Güven aralıkları örtüşüyorsa fark kanıtlanmış sayılmaz.';
+    }
+    if (d.label_noise) {
+      const n = d.label_noise;
+      const p = n.profile;
+      const pc = (v) => `%${(v * 100).toFixed(0)}`;
+      $('ml-noise-note').textContent = `CIC-IDS2017’de bütün saldırılar tek adresten (${n.suspect_ip}) gelir; aynı adresten “benign” etiketli ${p.suspects.toLocaleString('tr-TR')} pencere de var. `
+        + `Bunların ${pc(p.suspect_all_failed)}’inde bağlantıların hepsi başarısız (diğer normal pencerelerde ${pc(p.others_all_failed)}) ve ${pc(p.suspect_near_attack)}’i aynı adresin bir saldırı penceresine ${n.near_attack_seconds} sn’den yakın: tarama kuyruğuna benziyorlar. `
+        + 'Paket kaydı (pcap) olmadan bunun etiket hatası olduğu kanıtlanamaz; bu yüzden pencereler yeniden etiketlenmedi, yalnızca “şüpheli” işaretlenip sonuç iki şekilde verildi.'
+        + (d.xgboost_version ? ` Model sayıları xgboost ${d.xgboost_version} ile üretildi; başka sürümde küçük farklar çıkabilir.` : '');
+    }
+    $('ml-h1-title').hidden = $('ml-h1-note').hidden = !d.equal_fpr;
+    $('ml-noise-title').hidden = $('ml-noise-note').hidden = !d.label_noise;
     $('ml-ae-title').hidden = $('ml-ae-note').hidden = !d.autoencoder;
     $('ml-lab-title').hidden = $('ml-lab-note').hidden = !d.lab;
     $('ml-sub').textContent = `${d.dataset} · ${d.window} · rapor tarihi ${d.generated}`;

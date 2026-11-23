@@ -102,3 +102,58 @@ class MlReportContentTests(TestCase):
                 self.assertLessEqual(hit, n, (method["name"], cls))
                 self.assertEqual(n, lab["support"][cls])
         self.assertEqual(sum(lab["support"].values()), lab["windows"])
+
+
+class MlReportExtrasTests(TestCase):
+    """H1 ve etiket gürültüsü bölümleri isteğe bağlı: yoksa panel gizler, varsa tutarlı olmalı."""
+
+    def setUp(self):
+        views_panel._ml_report.cache_clear()
+        self.addCleanup(views_panel._ml_report.cache_clear)
+        self.staff = User.objects.create_user("ops2", password="x", is_staff=True)
+
+    def test_panel_template_has_the_extra_sections_and_stays_csp_safe(self):
+        self.client.force_login(self.staff)
+        resp = self.client.get("/panel/")
+        for needle in ("ml-h1-table", "ml-h1-clean-table", "ml-noise-table", "renderMlExtras",
+                       "Eşit yanlış alarmda karşılaştırma", "Etiket gürültüsü"):
+            self.assertContains(resp, needle)
+        html = resp.content.decode("utf-8")
+        start = html.index("function renderMlExtras")
+        block = html[start:html.index("function renderMl()", start)]
+        self.assertNotIn("innerHTML", block)
+        self.assertNotIn("style=", block)
+
+    def test_endpoint_passes_the_extra_sections_through(self):
+        import tempfile
+        from pathlib import Path
+
+        report = {"generated": "2026-01-01", "equal_fpr": {"targets": [0.01], "variants": {"all": [], "clean": []}},
+                  "label_noise": {"suspect_ip": "172.16.0.1", "profile": {}, "rows": []}, "xgboost_version": "3.4.1"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "r.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            self.client.force_login(self.staff)
+            with mock.patch.object(views_panel, "ML_REPORT_PATH", path):
+                data = self.client.get(URL).json()
+        self.assertEqual(data["xgboost_version"], "3.4.1")
+        self.assertIn("equal_fpr", data)
+        self.assertIn("label_noise", data)
+
+    def test_shipped_report_extras_are_consistent_when_present(self):
+        report = json.loads(views_panel.ML_REPORT_PATH.read_text(encoding="utf-8"))
+        h1 = report.get("equal_fpr")
+        if h1:
+            for variant, rows in h1["variants"].items():
+                self.assertEqual(len(rows), len(h1["targets"]) * len(h1["classes"]), variant)
+                for row in rows:
+                    self.assertGreater(row["n_pos"], 0)
+                    for method in ("rules", "model"):
+                        m = row[method]
+                        self.assertTrue(0.0 <= m["lo"] <= m["recall"] <= m["hi"] <= 1.0, (variant, row["cls"], method))
+                        self.assertLessEqual(m["fpr"], row["target"] + 1e-12)  # bütçeyi aşan nokta seçilmez
+        noise = report.get("label_noise")
+        if noise:
+            for row in noise["rows"]:
+                self.assertLessEqual(row["false_alarms"], row["normals"])
+            self.assertGreaterEqual(noise["profile"]["suspects"], 0)

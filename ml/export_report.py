@@ -7,11 +7,17 @@ Panel bu dosyayı olduğu gibi okur (hesap yapmaz): sayılar burada, eğitimle a
         --lab ../lab/data/conn.log ../lab/data/runs.jsonl
 
 Autoencoder (5 tohum) yaklaşık 1 dk sürer; `--no-ae` ile atlanır. `--lab` verilmezse lab bölümü eklenmez.
+
+H1 (eşit yanlış alarm) ve etiket gürültüsü bölümleri her çalıştırmada eklenir. Mevcut raporun geri kalanına
+dokunmadan yalnızca bu iki bölümü (ve xgboost sürümünü) yenilemek için:
+
+    python export_report.py data/windows_lycos.csv --out ../backend/core/ml_report.json --extras-only
 """
 
 import argparse
 import json
 from datetime import date
+from pathlib import Path
 
 from baseline import evaluate_rules
 from dataset import CLASSES, TRAIN_FRACTION, GAP_SECONDS, assign_split, load_windows
@@ -36,6 +42,20 @@ def split_counts(rows):
     for name in ("train", "gap", "test"):
         out[name] = {c: sum(1 for r in rows if r["split"] == name and r["cls"] == c) for c in CLASSES}
     return out
+
+
+def build_extras(rows):
+    """H1 ve etiket gürültüsü bölümleri; sayılar xgboost sürümüne göre değişebilir, bu yüzden sürüm de yazılır."""
+    import equal_fpr
+    import label_noise
+    import xgboost
+    from train_xgb import predict, predict_proba
+
+    train_rows = [r for r in rows if r["split"] == "train"]
+    model = train(train_rows)
+    scores = equal_fpr.collect_scores(rows, lambda rs: predict_proba(model, rs))
+    noise = label_noise.panel_summary(label_noise.profile(rows), label_noise.compare(rows, train, predict))
+    return {"equal_fpr": equal_fpr.panel_summary(scores), "label_noise": noise, "xgboost_version": xgboost.__version__}
 
 
 def build_report(rows, lab=None, with_ae=True):
@@ -69,6 +89,7 @@ def build_report(rows, lab=None, with_ae=True):
         conn_log, runs_path = lab
         result = lab_eval.run_lab(conn_log, runs_path, train_rows)
         report["lab"] = lab_eval.panel_summary(result)
+    report.update(build_extras(rows))
     return report
 
 
@@ -78,8 +99,18 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--lab", nargs=2, metavar=("CONN_LOG", "RUNS"), help="lab doğrulamasını da ekle")
     ap.add_argument("--no-ae", action="store_true", help="autoencoder'ı çalıştırma (yaklaşık 1 dk sürer)")
+    ap.add_argument("--extras-only", action="store_true",
+                    help="mevcut --out dosyasındaki diğer bölümlere dokunma; yalnızca H1 ve etiket gürültüsünü yenile")
     args = ap.parse_args(argv)
-    report = build_report(assign_split(load_windows(args.csv)), lab=args.lab, with_ae=not args.no_ae)
+    rows = assign_split(load_windows(args.csv))
+    if args.extras_only:
+        try:
+            report = json.loads(Path(args.out).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"--extras-only için okunabilir bir rapor gerekir ({args.out}): {exc}")
+        report.update(build_extras(rows))
+    else:
+        report = build_report(rows, lab=args.lab, with_ae=not args.no_ae)
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(report, fh, ensure_ascii=False, indent=1, sort_keys=True)
         fh.write("\n")

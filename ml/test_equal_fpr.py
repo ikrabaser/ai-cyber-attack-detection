@@ -49,6 +49,30 @@ class WilsonTests(unittest.TestCase):
         self.assertEqual(ef.wilson(0, 0), (0.0, 0.0))
 
 
+class PanelSummaryTests(unittest.TestCase):
+    def test_summary_has_both_variants_with_a_row_per_class_and_target(self):
+        data = {"pos": [0.9, 0.8], "neg": [0.1] * 10, "neg_clean": [0.1] * 5}
+        scores = {m: {c: data for c in ef.CLASSES_UNDER_TEST} for m in ("kurallar", "model")}
+        out = ef.panel_summary(scores, targets=(0.01, 0.1))
+        self.assertEqual(out["targets"], [0.01, 0.1])
+        self.assertEqual(set(out["variants"]), {"all", "clean"})
+        for rows in out["variants"].values():
+            self.assertEqual(len(rows), 2 * len(ef.CLASSES_UNDER_TEST))
+        first = out["variants"]["all"][0]
+        self.assertEqual((first["cls"], first["target"], first["n_pos"]), ("port_scan", 0.01, 2))
+        for method in ("rules", "model"):
+            m = first[method]
+            self.assertEqual(set(m), {"recall", "fpr", "lo", "hi"})
+            self.assertLessEqual(m["lo"], m["recall"])
+            self.assertGreaterEqual(m["hi"], m["recall"])
+
+    def test_summary_is_json_serialisable(self):
+        import json
+        data = {"pos": [0.9], "neg": [0.1], "neg_clean": [0.1]}
+        scores = {m: {c: data for c in ef.CLASSES_UNDER_TEST} for m in ("kurallar", "model")}
+        json.dumps(ef.panel_summary(scores))
+
+
 class CompareTests(unittest.TestCase):
     def test_compare_covers_each_class_and_target(self):
         data = {"pos": [0.9, 0.8], "neg": [0.1] * 10, "neg_clean": [0.1] * 5}

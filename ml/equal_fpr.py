@@ -107,6 +107,24 @@ def format_comparison(rows):
     return "\n".join(lines)
 
 
+def panel_summary(scores, targets=TARGETS):
+    """Panelin gösterdiği özet: sınıf ve hedef yanlış alarm oranı başına iki yöntemin yakalama oranı (güven aralığıyla).
+
+    İki varyant: "all" (normallerin hepsi) ve "clean" (172.16.0.1'den gelen şüpheli normaller hariç).
+    """
+    out = {"targets": list(targets), "classes": list(CLASSES_UNDER_TEST), "variants": {}}
+    for variant, key in (("all", "neg"), ("clean", "neg_clean")):
+        rows = []
+        for (c, t), cell in compare(scores, key, targets).items():
+            entry = {"cls": c, "target": t, "n_pos": cell["model"][2]}
+            for method, name in (("kurallar", "rules"), ("model", "model")):
+                recall, fpr, _, (lo, hi) = cell[method]
+                entry[name] = {"recall": recall, "fpr": fpr, "lo": lo, "hi": hi}
+            rows.append(entry)
+        out["variants"][variant] = rows
+    return out
+
+
 def main(path):
     from train_xgb import predict_proba, train
 
