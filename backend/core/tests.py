@@ -2,6 +2,7 @@ import json
 from datetime import timedelta
 from unittest import mock
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -50,7 +51,9 @@ class ActionDedupTests(TestCase):
         self.staff = User.objects.create_user("ops", password="x", is_staff=True)
 
     def propose(self, kind="block_ip", target=None, **kw):
-        return actions.propose_action(make_event(), kind, target or self.IP, **kw)
+        # IP engeli yalnızca olayın kaynak IP'sine önerilebilir; olay hedefle aynı kaynaktan gelir.
+        event = make_event(target or self.IP if kind == "block_ip" else self.IP)
+        return actions.propose_action(event, kind, target or self.IP, **kw)
 
     def count(self, **filters):
         return Action.objects.filter(**filters).count()
@@ -118,6 +121,70 @@ class ActionDedupTests(TestCase):
         for _ in range(2):
             self.assertEqual(self.propose(target="192.168.56.10").status, Action.Status.REFUSED)
         self.assertEqual(self.count(status=Action.Status.REFUSED), 2)
+
+
+class ActionTargetMatchTests(TestCase):
+    """IP engeli yalnızca olayın kaynak IP'sine önerilebilir (saldırgan kontrolündeki metin başkasını engelletemez)."""
+
+    SOURCE = "203.0.113.7"
+
+    def setUp(self):
+        self.event = make_event(self.SOURCE)
+
+    def test_block_for_another_ip_is_refused_without_creating_an_action(self):
+        with self.assertRaises(actions.ActionError) as ctx:
+            actions.propose_action(self.event, "block_ip", "198.51.100.20")
+        self.assertEqual(ctx.exception.code, 400)
+        self.assertEqual(Action.objects.count(), 0)
+        entry = AuditLog.objects.get(outcome="refused", target="198.51.100.20")
+        self.assertEqual(entry.detail["reason"], "target is not the event source")
+        self.assertEqual(entry.detail["event_source_ip"], self.SOURCE)
+
+    def test_block_for_the_event_source_still_works(self):
+        action = actions.propose_action(self.event, "block_ip", self.SOURCE)
+        self.assertEqual(action.status, Action.Status.PENDING_APPROVAL)
+
+    def test_spelling_differences_do_not_matter(self):
+        mapped = actions.propose_action(self.event, "block_ip", "::ffff:203.0.113.7")
+        self.assertEqual(mapped.status, Action.Status.PENDING_APPROVAL)
+        v6 = make_event("2001:db8::1")
+        self.assertEqual(
+            actions.propose_action(v6, "block_ip", "2001:DB8:0:0:0:0:0:1").status, Action.Status.PENDING_APPROVAL
+        )
+
+    def test_target_that_is_not_an_ip_is_refused(self):
+        for bad in ("web-01", "203.0.113.0/24", "203.0.113.7; rm -rf /", "203.0.113.7 198.51.100.20"):
+            with self.assertRaises(actions.ActionError, msg=bad):
+                actions.propose_action(self.event, "block_ip", bad)
+        self.assertEqual(Action.objects.count(), 0)
+
+    def test_missing_event_is_refused_fail_closed(self):
+        with self.assertRaises(actions.ActionError):
+            actions.propose_action(None, "block_ip", self.SOURCE)
+        self.assertEqual(Action.objects.count(), 0)
+
+    def test_mismatch_is_refused_even_when_the_target_is_protected(self):
+        with self.assertRaises(actions.ActionError):
+            actions.propose_action(self.event, "block_ip", "192.168.56.10")
+        self.assertEqual(Action.objects.count(), 0)
+
+    def test_other_kinds_are_not_affected(self):
+        host = actions.propose_action(self.event, "isolate_host", "web-01")
+        self.assertEqual(host.status, Action.Status.PENDING_APPROVAL)
+        fix = actions.propose_action(
+            self.event, "config_fix", "web-01", params={"fix_id": next(iter(settings.ALLOWED_CONFIG_FIXES))}
+        )
+        self.assertEqual(fix.status, Action.Status.PENDING_APPROVAL)
+
+    def test_refusals_stay_in_the_audit_log(self):
+        """Ret denetim kaydı, hata fırlatılınca geri alınan işlemin içinde yazılmamalı (config_fix için de)."""
+        with self.assertRaises(actions.ActionError):
+            actions.propose_action(self.event, "config_fix", "web-01", params={"fix_id": "rm -rf /"})
+        self.assertTrue(AuditLog.objects.filter(verb="propose_config_fix", outcome="refused").exists())
+
+    def test_rule_agent_blocks_only_the_event_source(self):
+        RuleAgent().investigate(self.event)
+        self.assertEqual(list(Action.objects.values_list("target", flat=True)), [self.SOURCE])
 
 
 class ActionPolicyTests(TestCase):
@@ -218,11 +285,11 @@ class ActionPolicyTests(TestCase):
         self.assertEqual(done.status, Action.Status.REJECTED)
 
     def test_expire_due_actions_closes_stale_approvals_and_rolls_back_ttl(self):
-        stale = actions.propose_action(self.event, "block_ip", "203.0.113.8")
+        stale = actions.propose_action(make_event("203.0.113.8"), "block_ip", "203.0.113.8")
         Action.objects.filter(pk=stale.pk).update(approval_deadline=timezone.now() - timedelta(seconds=1))
 
         live = actions.approve_action(
-            actions.propose_action(self.event, "block_ip", "203.0.113.9").pk, self.staff
+            actions.propose_action(make_event("203.0.113.9"), "block_ip", "203.0.113.9").pk, self.staff
         )
         Action.objects.filter(pk=live.pk).update(effect_expires_at=timezone.now() - timedelta(seconds=1))
 

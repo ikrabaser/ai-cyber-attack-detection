@@ -6,6 +6,8 @@ kullanıcıdan (Centrifugo RPC -> approve_action) gelir.
 
 Kurallar
 - Korumalı hedefler (protection.py) hem önerirken hem uygularken reddedilir.
+- IP engeli yalnızca olayın kaynak IP'sine önerilebilir. Başka bir IP (ör. yem olarak kullanılan
+  üçüncü taraf, NAT arkasındaki komşu, sahte kaynak) saldırgan kontrolündeki metinle engellenemez.
 - Kademe (AUTO_REMEDIATION_MODE):
     advise  : her eylem onay bekler.
     dry_run : TTL'li tek IP engeli otomatik ve "yapılmış gibi" kaydedilir.
@@ -15,6 +17,7 @@ Kurallar
 - Her adım denetim kaydına yazılır (reddedilenler dahil).
 """
 
+import ipaddress
 import logging
 from datetime import timedelta
 
@@ -69,6 +72,22 @@ def _parse_ttl(params):
 # --- Önerme ---------------------------------------------------------------
 
 
+def _same_ip(a, b):
+    """İki IP metni aynı adres mi? Yazım farkları (büyük/küçük harf, IPv4-eşlemeli IPv6) önemsenmez.
+
+    Biri çözümlenemiyorsa False döner: emin olunamayan eşleşme eşleşme sayılmaz.
+    """
+    def norm(value):
+        try:
+            ip = ipaddress.ip_address(str(value).strip())
+        except ValueError:
+            return None
+        return getattr(ip, "ipv4_mapped", None) or ip
+
+    left, right = norm(a), norm(b)
+    return left is not None and left == right
+
+
 def _active_action(kind, target):
     """Aynı tür + hedef için hâlâ geçerli eylem: bekleyen öneri veya süresi dolmamış önlem."""
     now = timezone.now()
@@ -106,8 +125,9 @@ def _lock_target(kind, target):
         )
 
 
-@transaction.atomic
 def propose_action(event, kind, target, params=None, proposed_by="agent"):
+    """Eylem öner. Geçersiz öneriler ATOMİK BLOKTAN ÖNCE reddedilir: böylece ret denetim kaydı,
+    hata fırlatıldığında geri alınmaz (işlem içinde fırlatılan hata kaydı da silerdi)."""
     params = dict(params or {})
     target = str(target or "").strip()
 
@@ -116,6 +136,8 @@ def propose_action(event, kind, target, params=None, proposed_by="agent"):
     if not target:
         raise ActionError(400, "hedef boş olamaz")
 
+    event_id = getattr(event, "pk", None)
+
     if kind == Action.Kind.CONFIG_FIX:
         fix_id = params.get("fix_id")
         if fix_id not in settings.ALLOWED_CONFIG_FIXES:
@@ -123,6 +145,20 @@ def propose_action(event, kind, target, params=None, proposed_by="agent"):
                          reason="fix not allowlisted", fix_id=fix_id)
             raise ActionError(400, "bu düzeltme izin listesinde değil")
 
+    # Eşleşmeyen engel hedefi eylem kaydı oluşturmaz, yalnızca denetim kaydına düşer ve hata döner.
+    if kind == Action.Kind.BLOCK_IP:
+        source_ip = getattr(event, "source_ip", None)
+        if not _same_ip(target, source_ip):
+            audit.record(proposed_by, "propose_block_ip", target, "refused",
+                         reason="target is not the event source", event_id=event_id,
+                         event_source_ip=str(source_ip) if source_ip else None)
+            raise ActionError(400, "engel hedefi olayın kaynak IP'siyle aynı olmalı")
+
+    return _propose(event, kind, target, params, proposed_by)
+
+
+@transaction.atomic
+def _propose(event, kind, target, params, proposed_by):
     event_id = getattr(event, "pk", None)
 
     if kind in PROTECTABLE_KINDS and is_protected_target(target):
