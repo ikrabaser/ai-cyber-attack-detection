@@ -123,6 +123,9 @@ class MlReportExtrasTests(TestCase):
         block = html[start:html.index("function renderMl()", start)]
         self.assertNotIn("innerHTML", block)
         self.assertNotIn("style=", block)
+        # Ondalık ayracı panelin geri kalanıyla aynı (virgül): ham toFixed çıktısı ekrana verilmez.
+        self.assertIn("pct3(", block)
+        self.assertNotIn("`%${", block)
 
     def test_endpoint_passes_the_extra_sections_through(self):
         import tempfile

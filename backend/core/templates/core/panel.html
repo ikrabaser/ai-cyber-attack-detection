@@ -167,6 +167,7 @@ td.wrap-cell { white-space: normal; min-width: 220px; max-width: 420px; }
 #ml-ae-table th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
 #ml-h1-table th, #ml-h1-table td, #ml-h1-clean-table th, #ml-h1-clean-table td, #ml-noise-table th, #ml-noise-table td { padding: 8px 9px; }
 #ml-h1-table th, #ml-h1-clean-table th, #ml-noise-table th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
+#ml-noise-table th:nth-child(2), #ml-noise-table td:nth-child(2) { text-align: left; }
 
 .flow { list-style: none; margin: 0; padding: 4px 0; max-height: 360px; overflow-y: auto; }
 .flow li { display: grid; grid-template-columns: 84px 92px 1fr; gap: 4px 12px; align-items: baseline; padding: 6px 14px; border-bottom: 1px solid var(--line); }
@@ -1382,6 +1383,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
   const pct2 = (v) => (v * 100).toFixed(2).replace('.', ',') + '%';
   const f3 = (v) => v.toFixed(3).replace('.', ',');
   const f2 = (v) => v.toFixed(2).replace('.', ',');
+  const pct3 = (v) => (v * 100).toFixed(3).replace('.', ',') + '%';
 
   function mlKpi(value, label) {
     const d = el('div', { cls: 'kpi' });
@@ -1478,9 +1480,9 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     for (const r of rows) {
       const tr = el('tr');
       tr.appendChild(el('td', { text: ML_CLASS[r.cls] || r.cls }));
-      tr.appendChild(el('td', { text: `%${(r.target * 100).toFixed(2)}` }));
+      tr.appendChild(el('td', { text: pct2(r.target) }));
       for (const m of [r.rules, r.model]) {
-        const td = el('td', { text: `${rangeText(m)} (%${(m.fpr * 100).toFixed(3)})` });
+        const td = el('td', { text: `${rangeText(m)} (${pct3(m.fpr)})` });
         heat(td, m.recall, c.info);
         tr.appendChild(td);
       }
@@ -1507,7 +1509,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
       for (const r of d.label_noise.rows) {
         const tr = el('tr');
         for (const v of [r.method, r.evaluation, r.normals.toLocaleString('tr-TR'), r.false_alarms.toLocaleString('tr-TR'),
-          `%${(r.fpr * 100).toFixed(3)}`, f2(r.ps_precision), f2(r.ps_recall), f3(r.macro_f1)]) tr.appendChild(el('td', { text: v }));
+          pct3(r.fpr), f2(r.ps_precision), f2(r.ps_recall), f3(r.macro_f1)]) tr.appendChild(el('td', { text: v }));
         body.appendChild(tr);
       }
       t.appendChild(body);
