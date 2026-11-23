@@ -15,3 +15,6 @@ lab/data/*
 # ML çıktıları (pencere CSV'leri, modeller)
 ml/data/*
 !ml/data/.gitkeep
+
+# Lab veri kopyaları (tarih/eski yedekleri)
+lab/data-*/
