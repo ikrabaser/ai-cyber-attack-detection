@@ -55,6 +55,9 @@ Saldırı testleri yalnızca **kendi izole lab ağında** yapılır.
 - **Prompt injection:** `Event.features` ve `summary` saldırgan kontrolünde olabilir; agent'a veri
   olarak verilmeli. Serbest komut yok, `config_fix` yalnızca izin listesindeki düzeltmeleri kabul eder.
 - Proxy uç noktaları ortak sır ister; sır tanımlı değilse hepsi kapalıdır. Sensör girişi Bearer token ister.
+- **Bilinen kötü IP ipucu** (`THREAT_INTEL_BAD_IPS`): statik, çevrimdışı bir liste; eşleşirse onay
+  kartında ek bir uyarı satırı gösterir ama hiçbir eylemi engellemez ya da otomatik onaylamaz (karar
+  yine politika katmanında). Tehdit istihbaratının ilk küçük parçası; canlı besleme sonraki aşama.
 
 ## Çalıştırma
 

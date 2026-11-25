@@ -47,6 +47,26 @@ class ProtectedIpChecksTests(SimpleTestCase):
         self.assertIn("192.168.56.999", out[0].msg)
 
 
+class ThreatIntelBadIpsChecksTests(SimpleTestCase):
+    def issues(self, **overrides):
+        with override_settings(**overrides):
+            return checks.check_threat_intel_bad_ips(None)
+
+    def test_empty_list_is_clean(self):
+        self.assertEqual(self.issues(THREAT_INTEL_BAD_IPS=[]), [])
+
+    def test_valid_entries_are_clean(self):
+        self.assertEqual(self.issues(THREAT_INTEL_BAD_IPS=["203.0.113.7", "198.51.100.0/24"]), [])
+
+    def test_invalid_entry_is_a_warning_never_an_error(self):
+        # Bu liste yalnızca ipucu verir; hatalı girdi hiçbir eylemi engellemez/onaylamaz,
+        # bu yüzden SECRETS_STRICT (DEBUG kapalı) olsa bile her zaman uyarıdır.
+        for strict in (True, False):
+            out = self.issues(THREAT_INTEL_BAD_IPS=["not-an-ip"], SECRETS_STRICT=strict)
+            self.assertEqual([(i.id, i.level) for i in out], [("core.W003", 30)], strict)
+            self.assertIn("not-an-ip", out[0].msg)
+
+
 class SecretChecksTests(SimpleTestCase):
     def issues(self, **overrides):
         base = dict(SENSOR_API_TOKEN=STRONG, RT_PROXY_SECRET=STRONG, RT_API_KEY=STRONG, SECRET_KEY=STRONG)

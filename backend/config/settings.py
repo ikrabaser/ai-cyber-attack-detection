@@ -147,6 +147,8 @@ if INCIDENT_IDLE_SECONDS < 60:
 
 PROTECTED_IPS = env_list("PROTECTED_IPS", "")
 PROTECTED_HOSTS = env_list("PROTECTED_HOSTS", "")
+# Statik, çevrimdışı "bilinen kötü IP" listesi; yalnızca onay kartında ipucu gösterir (bkz. core/threat_intel.py).
+THREAT_INTEL_BAD_IPS = env_list("THREAT_INTEL_BAD_IPS", "")
 
 AUTO_REMEDIATION_MODE = env("AUTO_REMEDIATION_MODE", "advise")
 if AUTO_REMEDIATION_MODE not in {"advise", "dry_run", "enforce"}:

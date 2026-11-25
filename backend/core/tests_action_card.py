@@ -51,6 +51,21 @@ class ActionCardPayloadTests(TestCase):
         payload = realtime.action_payload(actions.propose_action(event, "block_ip", event.source_ip))
         self.assertNotIn("198.51.100.9", str(payload))
 
+    def test_source_known_bad_flag_from_static_list(self):
+        from django.test import override_settings
+
+        with override_settings(THREAT_INTEL_BAD_IPS=["203.0.113.7"]):
+            event = make_event("203.0.113.7")
+            payload = realtime.action_payload(actions.propose_action(event, "block_ip", "203.0.113.7"))
+        self.assertTrue(payload["source_known_bad"])
+
+    def test_source_known_bad_false_when_not_listed(self):
+        with_default_empty_list = make_event("198.51.100.9")
+        payload = realtime.action_payload(
+            actions.propose_action(with_default_empty_list, "block_ip", "198.51.100.9")
+        )
+        self.assertFalse(payload["source_known_bad"])
+
 
 class ActionCardSnapshotTests(TestCase):
     def setUp(self):

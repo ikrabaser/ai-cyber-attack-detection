@@ -10,6 +10,7 @@ import requests
 from django.conf import settings
 
 from .protection import same_ip
+from .threat_intel import is_known_bad_ip
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +99,8 @@ def action_payload(action):
         payload["target_is_source"] = (
             same_ip(action.target, event.source_ip) if action.kind == "block_ip" else None
         )
+        # Statik, çevrimdışı liste ile ipucu; karar vermez (bkz. threat_intel.py).
+        payload["source_known_bad"] = is_known_bad_ip(event.source_ip)
     return payload
 
 

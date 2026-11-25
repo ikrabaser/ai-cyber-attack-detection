@@ -845,6 +845,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     if (a.proposed_by) who.push(`öneren: ${a.proposed_by}`);
     if (who.length) lines.push({ text: who.join(' · '), alert: false });
     if (a.target_is_source === false) lines.push({ text: `DİKKAT: hedef olayın kaynağından (${a.event_source_ip || '?'}) farklı`, alert: true });
+    if (a.source_known_bad) lines.push({ text: 'DİKKAT: kaynak IP bilinen kötü amaçlı listede (statik, çevrimdışı liste)', alert: true });
     return lines;
   }
 

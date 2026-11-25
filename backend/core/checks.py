@@ -75,3 +75,20 @@ def check_protected_ips(app_configs, **kwargs):
             id=f"core.{'E' if strict else 'W'}002",
         ))
     return issues
+
+
+@register()
+def check_threat_intel_bad_ips(app_configs, **kwargs):
+    """Bilinen kötü IP listesi yalnızca ipucu gösterir (bkz. threat_intel.py): hatalı girdi hiçbir eylemi
+    engellemez ya da otomatik onaylamaz, bu yüzden her zaman uyarıdır (Error değil)."""
+    issues = []
+    for raw in getattr(settings, "THREAT_INTEL_BAD_IPS", None) or []:
+        try:
+            ipaddress.ip_network(str(raw), strict=False)
+        except ValueError:
+            issues.append(Warning(
+                f"THREAT_INTEL_BAD_IPS içinde geçersiz değer: {raw!r}, yoksayılır.",
+                hint="Her girdi bir IP ya da CIDR olmalı (örn. 203.0.113.7 veya 198.51.100.0/24).",
+                id="core.W003",
+            ))
+    return issues
