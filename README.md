@@ -58,6 +58,11 @@ Saldırı testleri yalnızca **kendi izole lab ağında** yapılır.
 - **Bilinen kötü IP ipucu** (`THREAT_INTEL_BAD_IPS`): statik, çevrimdışı bir liste; eşleşirse onay
   kartında ek bir uyarı satırı gösterir ama hiçbir eylemi engellemez ya da otomatik onaylamaz (karar
   yine politika katmanında). Tehdit istihbaratının ilk küçük parçası; canlı besleme sonraki aşama.
+  Elle toplanmış bir IP/CIDR listesini bu formata çevirmek için:
+  `docker compose exec backend python manage.py normalize_threat_intel_ips "1.2.3.4, 5.6.7.0/24"`
+  (ya da argümansız çağırıp stdin'den yapıştırarak). Geçersiz girdileri uyarı olarak eler, tekrarları
+  siler, sırayı korur ve `.env`'e yapıştırılacak hazır `THREAT_INTEL_BAD_IPS=...` satırını yazdırır;
+  hiçbir dosyaya kendisi yazmaz.
 - **MITRE ATT&CK etiketi** (`core/attck.py`): saldırı türünden statik bir teknik kimliğine bakar
   (`port_scan` → T1046, `brute_force` → T1110); panelde saldırı türünün yanında parantez içinde
   gösterilir. Yalnızca bilgilendirici; korelasyon katmanının ilk küçük parçası.
