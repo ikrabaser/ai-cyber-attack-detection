@@ -257,4 +257,7 @@ Henüz denenmeyenler:
    Kademe 4 lab ilk çalıştırması bekleniyor). Sensör `--follow` ile `conn.log`'u canlı izleyebilir.
 2. XGBoost baseline, ardından Autoencoder; karar tablosu ve eşikler (PR eğrisi).
 3. Claude agent: `core/agent.py` içindeki `RuleAgent` yerine, araçları `core.actions` üzerinden geçen agent.
+   İlk küçük adım atıldı: salt okunur sorgu fonksiyonları `core/agent_tools.py`'de hazır (`get_event`,
+   `get_incident`, `get_incident_timeline`, `get_source_history`); hepsi zaten sanitize edilmiş payload'ları
+   sarar, hiçbiri yazmaz. Agent SDK'ya bağlama ve `propose_action` dışında yazma aracı vermemek hâlâ duruyor.
 4. Gerçek güvenlik duvarı arka ucu (lab ağ geçidi) ve kontrollü saldırı senaryoları ile ölçüm.
