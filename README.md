@@ -177,6 +177,10 @@ Bir incident'e bağlı olayları ve eylemleri zaman sırasına göre listeler (s
 kimliği, risk, durum). Yeni bir karar üretmez, yalnızca var olan kayıtları birleştirir (`core/incident_report.py`).
 Tam olay raporu (zaman çizelgesi + öneri) için başlangıç noktası.
 
+`stage_summary(incident)`: incident'te görülen farklı saldırı türlerini ilk görülme sırasına göre listeler
+(korelasyonun ilk ipucu, örn. `port_scan -> brute_force`); birden fazla aşama varsa komut çıktısında da
+gösterilir. "Bu bir zincir" demez, yalnızca sırayı gösterir — yorumu insan/ajan yapar.
+
 ### Triage (kanıt ve öneri)
 
 Incident ayrıntı kartında **Triage** bölümü, "bu gerçek mi?" sorusu için kanıt toplar (`core/triage.py`). Kural tabanlı ve
