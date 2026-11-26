@@ -920,7 +920,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
         el('td', { text: fmtTime(e.created_at) }),
         el('td', {}, ipLink(e.source_ip)),
         el('td', { text: e.target_host || '—' }),
-        el('td', { text: e.attack_type }),
+        el('td', { text: attackTypeText(e) }),
         el('td', {}, el('span', { cls: 'risk' }, el('span', { cls: 'bar ' + tone }, fill), el('b', { cls: 'mono', text: risk.toFixed(2) }))),
         el('td', {}, chip(lv, e.risk_level), sourceChip(e)),
         el('td', { text: EVSTATUS[e.status] || e.status }),
@@ -945,6 +945,12 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     const b = el('button', { cls: 'linkbtn mono', text: socName(ip), title: String(ip) + ' · Bu kaynağın zaman çizelgesini aç', attrs: { type: 'button' } });
     b.addEventListener('click', () => openSource(ip));
     return b;
+  }
+
+  // Saldırı türü metnine MITRE ATT&CK teknik kimliğini ekler (sunucudaki statik eşleme, bkz. core/attck.py).
+  // Yalnızca bilgilendirici: eşleşme yoksa saldırı türü olduğu gibi döner.
+  function attackTypeText(e) {
+    return e.attck ? `${e.attack_type} (${e.attck.id})` : e.attack_type;
   }
 
   function sourceMessage(text) {
@@ -1089,7 +1095,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
       return el('tr', {},
         el('td', { cls: 'mono', text: e.id }),
         el('td', { text: fmtDateTime(e.created_at) }),
-        el('td', { text: e.attack_type }),
+        el('td', { text: attackTypeText(e) }),
         el('td', { cls: 'mono', text: Math.max(0, Math.min(1, Number(e.risk_score) || 0)).toFixed(2) }),
         el('td', {}, chip(lv, e.risk_level), sourceChip(e)),
         el('td', { text: EVSTATUS[e.status] || e.status }),
@@ -1873,7 +1879,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     const inc = d.incident;
     const st = INCSTATUS[inc.status] || [inc.status, 'muted'];
     $('incd-title').textContent = `Incident #${inc.id} · ${inc.source_ip}`;
-    $('incd-flags').textContent = [d.protected ? 'korumalı IP, engellenmez' : '', inc.attack_type].filter(Boolean).join(' · ');
+    $('incd-flags').textContent = [d.protected ? 'korumalı IP, engellenmez' : '', attackTypeText(inc)].filter(Boolean).join(' · ');
     $('incd-status').textContent = st[0];
     $('incd-events').textContent = String(inc.event_count);
     $('incd-span').textContent = `${fmtTime(inc.first_seen)} – ${fmtTime(inc.last_seen)}`;
@@ -1894,7 +1900,7 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
     $('incd-events-body').replaceChildren(...d.events.map((e) => el('tr', {},
       el('td', { cls: 'mono', text: e.id }),
       el('td', { text: fmtDateTime(e.created_at) }),
-      el('td', { text: e.attack_type }),
+      el('td', { text: attackTypeText(e) }),
       el('td', { cls: 'mono', text: Math.max(0, Math.min(1, Number(e.risk_score) || 0)).toFixed(2) }),
       el('td', {}, chip(LEVEL[e.risk_level], e.risk_level), sourceChip(e)),
       el('td', { cls: 'wrap-cell', text: e.summary || '', title: e.summary || '' }))));

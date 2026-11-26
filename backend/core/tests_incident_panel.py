@@ -39,7 +39,7 @@ class IncidentPayloadTests(TestCase):
         self.assertEqual(
             set(payload),
             {"type", "id", "source_ip", "status", "risk_level", "max_risk", "attack_type",
-             "event_count", "first_seen", "last_seen", "closed_at", "summary"},
+             "attck", "event_count", "first_seen", "last_seen", "closed_at", "summary"},
         )
         self.assertEqual(payload["type"], "incident")
         self.assertEqual(len(payload["summary"]), 300)

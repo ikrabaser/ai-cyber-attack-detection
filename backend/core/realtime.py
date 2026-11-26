@@ -9,6 +9,7 @@ import logging
 import requests
 from django.conf import settings
 
+from .attck import attck_for
 from .protection import same_ip
 from .threat_intel import is_known_bad_ip
 
@@ -66,6 +67,8 @@ def event_payload(event):
         "detected_by": detected_by if detected_by in DETECTED_BY else "",
         "xgb_label": event.xgb_label,
         "xgb_score": event.xgb_score,
+        # Statik, bilgilendirici eşleme (bkz. attck.py); karar vermez.
+        "attck": attck_for(event.attack_type),
     }
 
 
@@ -141,6 +144,7 @@ def incident_payload(incident):
         "risk_level": incident.risk_level,
         "max_risk": incident.max_risk,
         "attack_type": incident.attack_type,
+        "attck": attck_for(incident.attack_type),
         "event_count": incident.event_count,
         "first_seen": incident.first_seen.isoformat(),
         "last_seen": incident.last_seen.isoformat(),

@@ -58,6 +58,9 @@ Saldırı testleri yalnızca **kendi izole lab ağında** yapılır.
 - **Bilinen kötü IP ipucu** (`THREAT_INTEL_BAD_IPS`): statik, çevrimdışı bir liste; eşleşirse onay
   kartında ek bir uyarı satırı gösterir ama hiçbir eylemi engellemez ya da otomatik onaylamaz (karar
   yine politika katmanında). Tehdit istihbaratının ilk küçük parçası; canlı besleme sonraki aşama.
+- **MITRE ATT&CK etiketi** (`core/attck.py`): saldırı türünden statik bir teknik kimliğine bakar
+  (`port_scan` → T1046, `brute_force` → T1110); panelde saldırı türünün yanında parantez içinde
+  gösterilir. Yalnızca bilgilendirici; korelasyon katmanının ilk küçük parçası.
 
 ## Çalıştırma
 
