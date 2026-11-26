@@ -166,6 +166,17 @@ Her satır bir incident kararıdır: etiket (`attack` = Onayla, `false_positive`
 geçerlidir. Kaynak IP ve karar veren kullanıcı yazılmaz. Hareketsizlik kapanışı etiket üretmez. `./backend` konteynere
 bağlı olduğu için dosya `backend/kararlar.jsonl` olarak görünür (`*.jsonl`/`*.csv` dosyalarını git'e ekleme).
 
+### Incident zaman çizelgesi (olay raporunun ilk küçük parçası)
+
+```
+docker compose exec backend python manage.py export_incident_timeline <incident_id>
+docker compose exec backend python manage.py export_incident_timeline <incident_id> --format json
+```
+
+Bir incident'e bağlı olayları ve eylemleri zaman sırasına göre listeler (saldırı türü + ATT&CK teknik
+kimliği, risk, durum). Yeni bir karar üretmez, yalnızca var olan kayıtları birleştirir (`core/incident_report.py`).
+Tam olay raporu (zaman çizelgesi + öneri) için başlangıç noktası.
+
 ### Triage (kanıt ve öneri)
 
 Incident ayrıntı kartında **Triage** bölümü, "bu gerçek mi?" sorusu için kanıt toplar (`core/triage.py`). Kural tabanlı ve
