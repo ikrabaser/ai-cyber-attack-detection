@@ -11,7 +11,7 @@ canlıda da geçerli olur.
 | ML-3 | XGBoost | **tamam** |
 | ML-4 | Lab pencerelerinde dış doğrulama | **tamam** |
 | ML-5 | Autoencoder (bilinmeyen saldırı) | **tamam** |
-| ML-6 | LSTM | |
+| ML-6 | LSTM | veri hazırlığı |
 | ML-7 | Sensöre bağlamak | |
 
 ## ML-1: veri hazırlığı
@@ -141,6 +141,19 @@ iyidir; autoencoder'ın asıl katkısı çok özelliği birlikte görmesiyle Gol
 saldırıları, bot ve slowhttptest bu 7 bağlantı özelliğiyle normalden ayrılamıyor (bot pencereleri normalden bile
 "daha normal"); yük (HTTP içeriği) görünmeden bu mümkün değil. (4) Heartbleed ve SQL injection 12 pencere,
 sonuçları işaret.
+
+## ML-6: LSTM — veri hazırlığı (ilk adım)
+
+```
+python lstm_sequences.py data/windows_lycos.csv [--seq-len 5]
+```
+
+XGBoost ve autoencoder tek pencereye bakıyor; LSTM ardışık pencerelerin DİZİSİNE bakacak (henüz eğitim/model
+yok, yalnızca veri hazırlığı). `lstm_sequences.py` pencereleri `dataset.py`'nin aynı ML-2 bölmesiyle
+(train/gap/test) alıp kaynak IP'ye göre gruplar, zaman sırasına dizer ve `--seq-len` uzunluğunda kayan
+pencereyle diziler üretir. Dizinin etiketi son penceresinin sınıfıdır. İki kural veri sızıntısını önler:
+bir dizi asla iki bölmeyi (train/test) karıştırmaz, ve pencereler arasında trafiksiz bir zaman boşluğu varsa
+(bir sonraki pencere tam 10 sn sonra başlamıyorsa) dizi orada kesilir, yeni bir dizi başlar.
 
 ## ML-7: Modeli sensöre bağlamak
 
