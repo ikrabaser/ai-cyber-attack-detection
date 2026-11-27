@@ -145,6 +145,7 @@ def incident_payload(incident):
         "max_risk": incident.max_risk,
         "attack_type": incident.attack_type,
         "attck": attck_for(incident.attack_type),
+        "source_known_bad": is_known_bad_ip(incident.source_ip),
         "event_count": incident.event_count,
         "first_seen": incident.first_seen.isoformat(),
         "last_seen": incident.last_seen.isoformat(),

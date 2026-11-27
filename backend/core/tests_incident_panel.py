@@ -39,11 +39,22 @@ class IncidentPayloadTests(TestCase):
         self.assertEqual(
             set(payload),
             {"type", "id", "source_ip", "status", "risk_level", "max_risk", "attack_type",
-             "attck", "event_count", "first_seen", "last_seen", "closed_at", "summary"},
+             "attck", "source_known_bad", "event_count", "first_seen", "last_seen", "closed_at", "summary"},
         )
         self.assertEqual(payload["type"], "incident")
         self.assertEqual(len(payload["summary"]), 300)
         self.assertIsNone(payload["closed_at"])
+
+    def test_source_known_bad_flag_from_static_list(self):
+        from django.test import override_settings
+
+        with override_settings(THREAT_INTEL_BAD_IPS=["203.0.113.7"]):
+            inc = make_incident(ip="203.0.113.7")
+            self.assertTrue(realtime.incident_payload(inc)["source_known_bad"])
+
+    def test_source_known_bad_false_when_not_listed(self):
+        inc = make_incident(ip="198.51.100.9")
+        self.assertFalse(realtime.incident_payload(inc)["source_known_bad"])
 
 
 def incident_publishes(pub):

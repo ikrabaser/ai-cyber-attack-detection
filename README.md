@@ -56,16 +56,17 @@ Saldırı testleri yalnızca **kendi izole lab ağında** yapılır.
   olarak verilmeli. Serbest komut yok, `config_fix` yalnızca izin listesindeki düzeltmeleri kabul eder.
 - Proxy uç noktaları ortak sır ister; sır tanımlı değilse hepsi kapalıdır. Sensör girişi Bearer token ister.
 - **Bilinen kötü IP ipucu** (`THREAT_INTEL_BAD_IPS`): statik, çevrimdışı bir liste; eşleşirse onay
-  kartında ek bir uyarı satırı gösterir ama hiçbir eylemi engellemez ya da otomatik onaylamaz (karar
-  yine politika katmanında). Tehdit istihbaratının ilk küçük parçası; canlı besleme sonraki aşama.
+  kartında ek bir uyarı satırı, incident listesinde de bir rozet gösterir ama hiçbir eylemi engellemez
+  ya da otomatik onaylamaz (karar yine politika katmanında). Tehdit istihbaratının ilk küçük parçası;
+  canlı besleme sonraki aşama.
   Elle toplanmış bir IP/CIDR listesini bu formata çevirmek için:
   `docker compose exec backend python manage.py normalize_threat_intel_ips "1.2.3.4, 5.6.7.0/24"`
   (ya da argümansız çağırıp stdin'den yapıştırarak). Geçersiz girdileri uyarı olarak eler, tekrarları
   siler, sırayı korur ve `.env`'e yapıştırılacak hazır `THREAT_INTEL_BAD_IPS=...` satırını yazdırır;
   hiçbir dosyaya kendisi yazmaz.
 - **MITRE ATT&CK etiketi** (`core/attck.py`): saldırı türünden statik bir teknik kimliğine bakar
-  (`port_scan` → T1046, `brute_force` → T1110); panelde saldırı türünün yanında parantez içinde
-  gösterilir. Yalnızca bilgilendirici; korelasyon katmanının ilk küçük parçası.
+  (`port_scan` → T1046, `brute_force` → T1110); panelde saldırı türünün yanında (incident listesi dahil)
+  parantez içinde gösterilir. Yalnızca bilgilendirici; korelasyon katmanının ilk küçük parçası.
 
 ## Çalıştırma
 
@@ -170,6 +171,8 @@ Her satır bir incident kararıdır: etiket (`attack` = Onayla, `false_positive`
 (`--include-unlabeled` ile `unlabeled` olarak eklenir). Aynı incident için birden çok etiketli karar varsa en sonuncusu
 geçerlidir. Kaynak IP ve karar veren kullanıcı yazılmaz. Hareketsizlik kapanışı etiket üretmez. `./backend` konteynere
 bağlı olduğu için dosya `backend/kararlar.jsonl` olarak görünür (`*.jsonl`/`*.csv` dosyalarını git'e ekleme).
+`--since 2026-11-01` (ya da tam ISO an) yalnızca o tarihten sonraki kararları sayar; pencere dışındaki bir karar
+hiç görülmediği için "en sonuncusu" da yalnızca bu pencere içinde değerlendirilir.
 
 ### Incident zaman çizelgesi (olay raporunun ilk küçük parçası)
 
@@ -267,6 +270,6 @@ Henüz denenmeyenler:
 2. XGBoost baseline, ardından Autoencoder; karar tablosu ve eşikler (PR eğrisi).
 3. Claude agent: `core/agent.py` içindeki `RuleAgent` yerine, araçları `core.actions` üzerinden geçen agent.
    İlk küçük adım atıldı: salt okunur sorgu fonksiyonları `core/agent_tools.py`'de hazır (`get_event`,
-   `get_incident`, `get_incident_timeline`, `get_source_history`); hepsi zaten sanitize edilmiş payload'ları
+   `get_incident`, `get_incident_timeline`, `get_source_history`, `get_open_incidents`); hepsi zaten sanitize edilmiş payload'ları
    sarar, hiçbiri yazmaz. Agent SDK'ya bağlama ve `propose_action` dışında yazma aracı vermemek hâlâ duruyor.
 4. Gerçek güvenlik duvarı arka ucu (lab ağ geçidi) ve kontrollü saldırı senaryoları ile ölçüm.

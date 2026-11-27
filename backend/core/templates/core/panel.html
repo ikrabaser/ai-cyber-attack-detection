@@ -1724,8 +1724,8 @@ body{font-size:14px}.wrap{padding-bottom:28px}header.top{padding:14px 0}header.t
       btn.addEventListener('click', () => openIncident(i.id));
       return el('tr', {},
         el('td', { cls: 'mono', text: i.id }),
-        el('td', {}, ipLink(i.source_ip)),
-        el('td', { text: i.attack_type }),
+        el('td', {}, ipLink(i.source_ip), i.source_known_bad ? chip(['bilinen kötü IP', 'warn']) : null),
+        el('td', { text: attackTypeText(i) }),
         el('td', {}, chip(LEVEL[i.risk_level], i.risk_level)),
         el('td', { cls: 'mono', text: i.event_count }),
         el('td', { text: fmtDateTime(i.last_seen) }),

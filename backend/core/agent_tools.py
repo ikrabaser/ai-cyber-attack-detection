@@ -16,6 +16,17 @@ from .models import Event, Incident
 from .realtime import event_payload, incident_payload
 from .source_detail import build_source
 
+MAX_OPEN_INCIDENTS = 50
+
+
+def get_open_incidents(limit=MAX_OPEN_INCIDENTS):
+    """Açık (yeni/inceleniyor/onaylandı) incident'lerin panel payload'u, en son görülen önce."""
+    limit = min(int(limit), MAX_OPEN_INCIDENTS)
+    incidents = Incident.objects.filter(
+        status__in=[s.value for s in Incident.OPEN_STATUSES]
+    ).order_by("-last_seen", "-id")[:limit]
+    return [incident_payload(i) for i in incidents]
+
 
 def get_event(event_id):
     """Tek bir olayın panel payload'u (bkz. realtime.event_payload); yoksa None."""

@@ -12,7 +12,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 
 from . import checks, incidents
-from .models import Event, Incident
+from .models import AuditLog, Event, Incident
 
 User = get_user_model()
 STRONG = "x7Qm2vL9pR4tZ8wK1nB6cD3fG5hJ0sAa"
@@ -217,3 +217,30 @@ class ExportDecisionsTests(TestCase):
 
     def test_empty_store_exports_nothing(self):
         self.assertEqual(self.export(), "")
+
+    def test_since_excludes_decisions_before_the_cutoff(self):
+        old = make_incident("203.0.113.10")
+        incidents.decide(old.pk, self.user, "confirm")
+        AuditLog.objects.filter(target=old.source_ip).update(created_at=timezone.now() - timedelta(days=5))
+        new = make_incident("203.0.113.11")
+        incidents.decide(new.pk, self.user, "confirm")
+        rows = self.rows("--since", str((timezone.now() - timedelta(days=1)).date()))
+        self.assertEqual([r["incident_id"] for r in rows], [new.pk])
+
+    def test_since_accepts_a_bare_date(self):
+        inc = make_incident("203.0.113.12")
+        incidents.decide(inc.pk, self.user, "confirm")
+        tomorrow = (timezone.now() + timedelta(days=1)).date()
+        self.assertEqual(self.rows("--since", str(tomorrow)), [])
+        yesterday = (timezone.now() - timedelta(days=1)).date()
+        self.assertEqual(len(self.rows("--since", str(yesterday))), 1)
+
+    def test_since_accepts_a_full_datetime(self):
+        inc = make_incident("203.0.113.13")
+        incidents.decide(inc.pk, self.user, "confirm")
+        cutoff = (timezone.now() - timedelta(minutes=5)).isoformat()
+        self.assertEqual(len(self.rows("--since", cutoff)), 1)
+
+    def test_since_with_bad_value_is_a_command_error(self):
+        with self.assertRaises(CommandError):
+            call_command("export_decisions", "--since", "not-a-date", stdout=io.StringIO())

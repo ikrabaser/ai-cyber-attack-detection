@@ -2,8 +2,23 @@ import csv
 import json
 
 from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 
 from core.models import AuditLog
+
+
+def _parse_since(raw):
+    """"YYYY-MM-DD" ya da ISO datetime kabul eder; yalnızca tarihse günün başlangıcı sayılır."""
+    dt = parse_datetime(raw)
+    if dt is None:
+        day = parse_date(raw)
+        if day is None:
+            raise CommandError(f"--since geçersiz tarih: {raw!r} (ör. 2026-11-01 ya da 2026-11-01T00:00:00)")
+        dt = timezone.datetime.combine(day, timezone.datetime.min.time())
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt)
+    return dt
 
 LABELS = {"attack": "attack", "false_positive": "false_positive", "unlabeled": "unlabeled"}
 
@@ -21,7 +36,9 @@ class Command(BaseCommand):
     help = (
         "İnsan kararlarını (karar anındaki triage özeti + etiket) ML için dışa aktarır.\n"
         "Etiket: Onayla = attack, Yanlış alarm = false_positive. Çöz tek başına etiket sayılmaz (varsayılan: dışarıda).\n"
-        "Aynı incident için birden fazla etiketli karar varsa en son olan geçerlidir. IP ve karar veren kullanıcı yazılmaz."
+        "Aynı incident için birden fazla etiketli karar varsa en son olan geçerlidir. IP ve karar veren kullanıcı yazılmaz.\n"
+        "--since verilirse yalnızca o andan sonraki kararlar sayılır (daha önceki bir karar varsa görülmez; "
+        "'en son' da yalnızca bu pencere içinde değerlendirilir)."
     )
 
     def add_arguments(self, parser):
@@ -29,9 +46,12 @@ class Command(BaseCommand):
         parser.add_argument("--out", help="Dosya yolu (verilmezse ekrana yazılır)")
         parser.add_argument("--include-unlabeled", action="store_true",
                             help="Çöz ile kapatılanları da (etiket: unlabeled) yaz")
+        parser.add_argument("--since", help="Yalnızca bu tarihten/andan sonraki kararlar (ör. 2026-11-01)")
 
-    def _rows(self, include_unlabeled):
+    def _rows(self, include_unlabeled, since=None):
         entries = AuditLog.objects.filter(verb__in=["confirm_incident", "close_incident"]).order_by("id")
+        if since is not None:
+            entries = entries.filter(created_at__gte=since)
         latest = {}
         for entry in entries:
             snap = (entry.detail or {}).get("triage")
@@ -62,7 +82,8 @@ class Command(BaseCommand):
         return list(latest.values())
 
     def handle(self, *args, **opts):
-        rows = self._rows(opts["include_unlabeled"])
+        since = _parse_since(opts["since"]) if opts["since"] else None
+        rows = self._rows(opts["include_unlabeled"], since=since)
         try:
             out = open(opts["out"], "w", encoding="utf-8", newline="") if opts["out"] else self.stdout
         except OSError as exc:

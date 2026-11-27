@@ -1,8 +1,10 @@
 from django.test import TestCase
+from django.utils import timezone
 
 from . import actions, agent_tools
 from .attck import attck_for
 from .ingest import ingest_event
+from .models import Incident
 from .source_detail import SourceError
 
 IP = "203.0.113.7"
@@ -10,6 +12,35 @@ IP = "203.0.113.7"
 
 def send(ip=IP, risk=0.92, attack="port_scan"):
     return ingest_event({"source_ip": ip, "risk_score": risk, "attack_type": attack})
+
+
+class GetOpenIncidentsTests(TestCase):
+    def test_returns_open_incidents_as_sanitized_payloads(self):
+        event = send()
+        rows = agent_tools.get_open_incidents()
+        self.assertEqual([r["id"] for r in rows], [event.incident_id])
+        self.assertEqual(rows[0]["attack_type"], "port_scan")
+
+    def test_closed_incidents_are_excluded(self):
+        event = send(ip="198.51.100.1")
+        Incident.objects.filter(pk=event.incident_id).update(status=Incident.Status.RESOLVED)
+        self.assertEqual(agent_tools.get_open_incidents(), [])
+
+    def test_ordered_by_most_recently_seen_first(self):
+        older = send(ip="198.51.100.1")
+        newer = send(ip="198.51.100.2")
+        Incident.objects.filter(pk=older.incident_id).update(last_seen=timezone.now() - timezone.timedelta(hours=1))
+        rows = agent_tools.get_open_incidents()
+        self.assertEqual([r["id"] for r in rows], [newer.incident_id, older.incident_id])
+
+    def test_no_open_incidents_returns_empty_list(self):
+        self.assertEqual(agent_tools.get_open_incidents(), [])
+
+    def test_limit_is_capped_at_the_module_maximum(self):
+        for i in range(3):
+            send(ip=f"198.51.100.{i + 1}")
+        rows = agent_tools.get_open_incidents(limit=agent_tools.MAX_OPEN_INCIDENTS + 1000)
+        self.assertEqual(len(rows), 3)  # yalnızca 3 açık incident var, tavan aşılmadı
 
 
 class GetEventTests(TestCase):
