@@ -243,7 +243,7 @@ Admin'de Event, Action ve AuditLog'u kontrol et. `AUTO_REMEDIATION_MODE=dry_run`
 ```bash
 cd backend
 pip install -r requirements.txt
-python manage.py test --settings=config.settings_test   # 244 test (+3 atlanır), Postgres gerekmez
+python manage.py test --settings=config.settings_test   # 352 test (3'ü atlanır), Postgres gerekmez
 ```
 
 Eşzamanlı öneri ve incident yarışlarının testleri (`core/tests_concurrency.py`, 3 test) yalnızca PostgreSQL'de çalışır, sqlite'ta
@@ -258,9 +258,12 @@ saldırgan kontrollü metinlerin (HTML/script) etkisiz kalması.
 
 Henüz denenmeyenler:
 
-1. **Gerçek ağ trafiği:** olaylar şimdilik `emit_test_event` ile üretiliyor; modeller ve gerçek güvenlik duvarı
-   arka ucu yok. Laboratuvar iskeleti (`lab/`: izole ağ, hedef, nmap/Hydra saldırganı, normal trafik, Zeek) yazıldı
-   ve birim testleri geçiyor, ama Docker imajları ve Zeek henüz çalıştırılıp denenmedi; ilk çalıştırma bekleniyor.
+1. **Gerçek güvenlik duvarı arka ucu:** onaylanan eylemler şu an yalnızca loglanıyor (`core/firewall.py`'deki
+   `LogOnlyBackend`); gerçek bir cihaza (örn. lab ağ geçidinde iptables/nftables) uygulanmıyor. Gerçek ağ trafiği
+   ve modeller tarafı artık denendi: laboratuvar (`lab/`: izole ağ, hedef, nmap/Hydra saldırganı, normal trafik,
+   Zeek) çalıştırıldı, 17 Kasım 2026'da ilk ölçüm alındı, XGBoost ve autoencoder lab pencereleriyle dış doğrulandı
+   (ML-4), 25 Kasım 2026'da canlı Zeek akışında `--follow --model` ile kural+model rozetleri gerçek zamanlı
+   doğrulandı.
 
 ## Sonraki adımlar
 
